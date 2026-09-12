@@ -76,7 +76,7 @@
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
-import { getPaymentList } from '@/api/pay'
+import { getPaymentList } from '@/api/payment'
 import { formatAmount } from '@/utils/format'
 
 export default {

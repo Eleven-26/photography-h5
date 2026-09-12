@@ -4,7 +4,7 @@
          作品列表 · 画板 C24（2026-09-07 Ardot 实测 1:1303 一比一还原）
          结构：导航 → 摄影师信息行（头像/名/简介/联系）→ 分类筛选横滑
                → 双列作品网格 → 毛玻璃底栏（定制需求）
-         数据源：getAssets（biz_asset）· getHome().studio（信息行）
+         数据源：getAssets（biz_asset）· getStudioInfo().studio（信息行）
          ============================================================ -->
     <!-- 状态栏占位：设计稿顶部 Iphone 44px（C24 状态栏 0-44，导航行 44-88）。
          H5 由 .status-bar 固定 44px；MP 端 AppNavBar 已用系统值定位，避免双计。 -->
@@ -56,11 +56,12 @@
 <script>
 /**
  * 作品列表（画板 C24）· 2026-09-07 对稿还原
- * 数据源：getAssets（biz_asset，分类参数待联调核对）、getHome（工作室信息行）
+ * 数据源：getAssets（biz_asset，分类参数待联调核对）、getStudioInfo（工作室信息行）
  * 分类筛选：设计稿演示「全部/家庭纪念/亲子写真/户外写真/纪实」，
  *          后端 biz_asset 分类字段名联调核对后接入真实枚举。
  */
-import { getHome, getAssets } from '@/api/home'
+import { getStudioInfo } from '@/api/studio'
+import { getAssets } from '@/api/asset'
 import { contactPhotographer } from '@/utils/format'
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -103,7 +104,7 @@ export default {
       this.loading = true
       try {
         // 工作室信息行（失败不阻塞作品加载）
-        getHome()
+        getStudioInfo()
           .then((home) => { this.studio = (home && home.studio) || {} })
           .catch(() => {})
         // 分类参数字段名联调核对（category/category_name）

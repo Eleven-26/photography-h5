@@ -62,7 +62,7 @@
  */
 import { sendSmsCode, loginByCode } from '@/api/auth'
 import { setSlug } from '@/utils/slug'
-import { useUserStore } from '@/store/user'
+import { useUserStore } from '@/stores/user'
 
 export default {
   data() {
@@ -87,7 +87,7 @@ export default {
     // 工作室短链标识：小程序端由进入参数携带（H5 端由 utils/slug.js 读 URL，无需处理）
     if (options.slug) setSlug(options.slug)
   },
-  beforeDestroy() {
+  beforeUnmount() {
     if (this.timer) clearInterval(this.timer)
   },
   methods: {

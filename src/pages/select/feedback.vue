@@ -119,7 +119,7 @@ export default {
     return {
       FEEDBACK_TYPES,
       PRIORITIES,
-      deliveryId: null,
+      orderId: null,
       items: [],      // [{ id, no, url, fb_content, fb_types, fb_priority }]
       cursor: 0,      // 当前照片下标
       form: { types: [], content: '', priority: 'normal' }, // 当前张的编辑态（切换时同步回 items）
@@ -138,13 +138,13 @@ export default {
     },
   },
   onLoad(query) {
-    this.deliveryId = query.deliveryId || query.id
+    this.orderId = query.deliveryId || query.id
     this.fetchData()
   },
   methods: {
     async fetchData() {
       try {
-        const res = await getDeliveryItems(this.deliveryId)
+        const res = await getDeliveryItems(this.orderId)
         const list = Array.isArray(res) ? res : (res && res.data) || []
         /* 仅精修中的样片参与逐张反馈（kind=2 已选 → 精修对象），字段联调核对 */
         this.items = list.map((it, i) => ({

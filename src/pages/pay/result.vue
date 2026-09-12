@@ -76,7 +76,7 @@
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
-import { getPaymentList } from '@/api/pay'
+import { getPaymentList } from '@/api/payment'
 
 export default {
   components: { AppNavBar, AppButton },

@@ -106,9 +106,8 @@
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
-import { getPaymentMethods } from '@/api/home'
+import { getPaymentMethods, submitPaymentMark } from '@/api/payment'
 import { getOrderDetail } from '@/api/order'
-import { submitPaymentMark } from '@/api/pay'
 import { DEMO_BANK } from '@/utils/demo'
 
 export default {

@@ -1,5 +1,7 @@
 /**
  * 用户状态 —— Pinia
+ *
+ * 目录位置对齐 SLOT 管理端 photography-frontend/src/stores/（复数）。
  * 管理登录态与客户信息（crm_customer 行），全局响应式读取。
  */
 import { defineStore } from 'pinia'

@@ -132,14 +132,16 @@ export default {
     formatAmount,
     async fetchData() {
       try {
+        /* /delivery/detail/:id 的 :id 是 order_id，返回 { delivery, items } */
         const detail = await getDeliveryDetail(this.orderId)
-        this.deliveryId = detail && detail.id
-        this.quota = Number((detail && detail.package_quota) || 20)
-        this.extraCount = Number((detail && detail.extra_selected_count) || 0)
-        this.extraFee = Number((detail && detail.extra_fee) || 0)
-        this.finalDue = Number((detail && detail.final_amt) || this.finalDue)
-        this.depositAmt = Number((detail && detail.deposit_amt) || this.depositAmt)
-        const res = await getDeliveryItems(this.deliveryId || this.orderId)
+        const d = (detail && detail.delivery) || null
+        this.deliveryId = d && d.id
+        this.quota = Number((d && d.package_quota) || 20)
+        this.extraCount = Number((d && d.extra_selected_count) || 0)
+        this.extraFee = Number((d && d.extra_fee) || 0)
+        this.finalDue = Number((d && d.final_amt) || this.finalDue)
+        this.depositAmt = Number((d && d.deposit_amt) || this.depositAmt)
+        const res = await getDeliveryItems(this.orderId)
         const list = Array.isArray(res) ? res : (res && res.data) || []
         this.items = list.map((it) => ({ id: it.id, url: it.url || it.file_url }))
       } catch (e) {
@@ -158,7 +160,7 @@ export default {
         uni.showToast({ title: '修改次数已用完，可联系摄影师协商', icon: 'none' })
         return
       }
-      uni.navigateTo({ url: `/pages/select/feedback?deliveryId=${this.deliveryId || ''}` })
+      uni.navigateTo({ url: `/pages/select/feedback?orderId=${this.orderId || ''}` })
     },
     async onConfirm() {
       this.submitting = true

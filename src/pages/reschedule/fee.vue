@@ -92,7 +92,7 @@
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
-import { submitPaymentMark } from '@/api/pay'
+import { submitPaymentMark } from '@/api/payment'
 import { DEMO_BANK } from '@/utils/demo'
 
 export default {

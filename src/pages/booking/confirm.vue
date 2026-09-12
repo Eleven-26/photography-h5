@@ -82,7 +82,7 @@
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
-import { getPackageDetail } from '@/api/home'
+import { getPackageDetail } from '@/api/package'
 import { submitBooking } from '@/api/order'
 import { isDemo, DEMO_ORDER } from '@/utils/demo'
 

@@ -138,7 +138,7 @@
  * ⚠️ 金额口径：deposit/final 为 30% 规则的展示推导（DECIMAL 元直读，不做
  *    分转换单独运算）；联调后如服务端返回 deposit_amount 等字段则改为直读。
  */
-import { getPackageDetail } from '@/api/home'
+import { getPackageDetail } from '@/api/package'
 import { formatAmount } from '@/utils/format'
 import AppSection from '@/components/AppSection.vue'
 import AppButton from '@/components/AppButton.vue'

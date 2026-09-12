@@ -108,10 +108,12 @@ export default {
     formatAmount,
     async fetchData() {
       try {
+        /* /delivery/detail/:id 的 :id 是 order_id，返回 { delivery, items } */
         const detail = await getDeliveryDetail(this.orderId)
-        this.deliveryId = detail && detail.id
-        if (detail && detail.package_quota) this.quota = Number(detail.package_quota)
-        const res = await getDeliveryItems(this.deliveryId || this.orderId)
+        const d = (detail && detail.delivery) || null
+        this.deliveryId = d && d.id
+        if (d && d.package_quota) this.quota = Number(d.package_quota)
+        const res = await getDeliveryItems(this.orderId)
         const list = Array.isArray(res) ? res : (res && res.data) || []
         this.items = list.map((it) => ({ id: it.id, url: it.url || it.file_url, is_selected: !!it.is_selected }))
         this.selectedIds = this.items.filter((it) => it.is_selected).map((it) => it.id)

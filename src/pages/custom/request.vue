@@ -102,7 +102,7 @@
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
-import { submitCustomRequest } from '@/api/custom'
+import { submitCustomRequest } from '@/api/customRequest'
 
 const TYPES = ['家庭纪念', '个人写真', '情侣/婚纱', '儿童写真', '活动跟拍', '其他']
 const BUDGETS = ['¥1,000以内', '¥1,000-3,000', '¥3,000-5,000', '¥5,000以上']

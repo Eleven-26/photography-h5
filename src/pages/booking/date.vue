@@ -80,7 +80,7 @@
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppCalendar from '@/components/AppCalendar.vue'
 import AppButton from '@/components/AppButton.vue'
-import { getAvailableSlots } from '@/api/home'
+import { getAvailableSlots } from '@/api/slot'
 
 /* 时段模板：与 C03 稿一致；16:00-18:00 稿内为禁用态 */
 const DEMO_SLOTS = [

@@ -1,6 +1,9 @@
 /**
  * 后端枚举字典（前端展示的唯一状态来源）
  *
+ * 目录位置对齐 SLOT 管理端 photography-frontend/src/constants/enums.ts：
+ * 枚举是「与端无关的常量」，放 constants/；config/ 只留平台相关的 env.js。
+ *
  * ⚠️ 字段纪律（需求文档 v1.3 §4.3）：
  * 1. 所有枚举值与文案对齐 photography-server DDL 字段注释，禁止自造状态值；
  * 2. 后端注释「待核验」为禁词，前端展示统一「待确认收款」（差异确认单 B9）；

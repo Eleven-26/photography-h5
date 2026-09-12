@@ -115,7 +115,7 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
-import { getRefundList } from '@/api/reschedule'
+import { getRefundList } from '@/api/refund'
 import { formatAmount } from '@/utils/format'
 
 export default {

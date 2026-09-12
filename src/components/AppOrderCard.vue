@@ -31,7 +31,7 @@
 
 <script>
 import AppBadge from '@/components/AppBadge.vue'
-import { ORDER_VIEW_STATE } from '@/config/enums'
+import { ORDER_VIEW_STATE } from '@/constants/enums'
 import { formatAmount } from '@/utils/format'
 
 /**

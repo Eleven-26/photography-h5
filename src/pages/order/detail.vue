@@ -179,7 +179,7 @@ import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppBadge from '@/components/AppBadge.vue'
 import { getOrderDetail } from '@/api/order'
-import { ORDER_VIEW_STATE, FEE_TYPE, RESCHEDULE_STATUS, REFUND_STATUS } from '@/config/enums'
+import { ORDER_VIEW_STATE, FEE_TYPE } from '@/constants/enums'
 import { formatAmount } from '@/utils/format'
 
 /** 流程 6 步标签（C09-2 实测：预约/定金/拍摄/选片/后期/交付） */
@@ -246,7 +246,6 @@ export default {
       const demo = this.$root.$mp ? this.$root.$mp.query : {}
       if (demo === 'reschedule' || demo === 'refund') return demo
       if (this.order.status === 7) return 'refund'
-      if (this.reschedule && this.reschedule.status === RESCHEDULE_STATUS && false) return 'reschedule'
       return this.reschedule && this.reschedule.status === 1 ? 'reschedule' : 'normal'
     },
     badgeText() {

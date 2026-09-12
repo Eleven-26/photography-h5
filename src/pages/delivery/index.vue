@@ -111,10 +111,12 @@ export default {
     formatAmount,
     async loadData() {
       try {
+        /* /delivery/detail/:id 的 :id 是 order_id，返回 { delivery, items } */
         const detail = await getDeliveryDetail(this.orderId)
-        this.deliveryId = detail && detail.id
-        this.photographer = (detail && detail.photographer_name) || this.photographer
-        const res = await getDeliveryItems(this.deliveryId || this.orderId)
+        const d = (detail && detail.delivery) || null
+        this.deliveryId = d && d.id
+        this.photographer = (d && d.photographer_name) || this.photographer
+        const res = await getDeliveryItems(this.orderId)
         const list = Array.isArray(res) ? res : (res && res.data) || []
         this.items = list.map((it) => ({ id: it.id, url: it.url || it.file_url }))
       } catch (e) {

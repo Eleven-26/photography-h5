@@ -84,7 +84,7 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
-import { applyCancel } from '@/api/reschedule'
+import { applyCancel } from '@/api/order'
 import { formatAmount } from '@/utils/format'
 
 const REASONS = ['时间冲突', '预算原因', '找到了其他摄影师', '其他']

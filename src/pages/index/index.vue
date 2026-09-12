@@ -4,7 +4,7 @@
          首页 · 画板 C01（2026-09-07 Ardot 实测 1:55 一比一还原）
          结构：Hero 大图 → 数据统计卡 → 精选服务（套餐横滑）→ 精选作品
                （双列瀑布流）→ 服务流程 → 常见问题 → 毛玻璃底栏（定制需求）
-         数据源：getHome（biz_studio_setting + biz_asset）· getPackages（status=1）
+         数据源：getStudioInfo（biz_studio_setting + biz_asset）· getPackages（status=1）
          ============================================================ -->
 
     <!-- ① Hero：360px 大图 + 渐变（顶部压暗 / 底部融入页面底色）
@@ -138,12 +138,13 @@
 <script>
 /**
  * 首页（画板 C01）—— 摄影师主页 · 2026-09-07 对稿还原
- * 数据源：getHome（biz_studio_setting 工作室信息 + biz_asset 精选作品）、
+ * 数据源：getStudioInfo（biz_studio_setting 工作室信息 + biz_asset 精选作品）、
  *        getPackages（biz_package，仅 status=1 已上架——快捷直约口径②）
  * 待联调核对：studio 统计字段（works/clients/rate 的真实来源字段名）、
  *            套餐 cover_url / 时长字段、FAQ 数据接口
  */
-import { getHome, getPackages } from '@/api/home'
+import { getStudioInfo } from '@/api/studio'
+import { getPackages } from '@/api/package'
 import { formatAmount as formatPrice } from '@/utils/format'
 import AppSection from '@/components/AppSection.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -212,7 +213,7 @@ export default {
     },
     async loadData() {
       try {
-        const [home, pkgs] = await Promise.all([getHome(), getPackages()])
+        const [home, pkgs] = await Promise.all([getStudioInfo(), getPackages()])
         this.studio = (home && home.studio) || {}
         this.featuredWorks = (home && home.featured_assets) || []
         // 双保险：仅已上架套餐（status=1，口径②）

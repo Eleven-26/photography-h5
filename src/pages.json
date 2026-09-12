@@ -1,0 +1,47 @@
+{
+  "_comment": "全量路由注册（小程序式架构）。命名映射需求文档 v1.3 第 7 章画板：C01=首页 C02=套餐 C03=选日期 C04=需求 C05=预约确认 C06=报价 C07/C08=定金登记 C09/C11/C12=订单 C13=选片 C14/C15=反馈确认 C16/C16A=尾款 C17=交付 C18/C19/B2=改期 C20/C21=取消退款 C24=作品 C27=定制需求",
+  "easycom": {
+    "autoscan": true,
+    "custom": {
+      "^App(.+)": "@/components/App$1.vue"
+    }
+  },
+  "pages": [
+    { "path": "pages/index/index", "style": { "navigationBarTitleText": "SLOT 摄影预约" } },
+    { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
+    { "path": "pages/works/index", "style": { "navigationBarTitleText": "作品集" } },
+    { "path": "pages/package/detail", "style": { "navigationBarTitleText": "套餐详情" } },
+    { "path": "pages/booking/date", "style": { "navigationBarTitleText": "选择日期" } },
+    { "path": "pages/booking/form", "style": { "navigationBarTitleText": "填写需求" } },
+    { "path": "pages/booking/confirm", "style": { "navigationBarTitleText": "预约确认" } },
+    { "path": "pages/custom/request", "style": { "navigationBarTitleText": "定制需求" } },
+    { "path": "pages/quote/detail", "style": { "navigationBarTitleText": "查看报价" } },
+    { "path": "pages/pay/deposit", "style": { "navigationBarTitleText": "定金支付登记" } },
+    { "path": "pages/pay/result", "style": { "navigationBarTitleText": "登记结果" } },
+    { "path": "pages/pay/final", "style": { "navigationBarTitleText": "尾款结清" } },
+    { "path": "pages/pay/final-result", "style": { "navigationBarTitleText": "尾款登记" } },
+    { "path": "pages/order/list", "style": { "navigationBarTitleText": "我的订单" } },
+    { "path": "pages/order/detail", "style": { "navigationBarTitleText": "订单详情" } },
+    { "path": "pages/order/prep", "style": { "navigationBarTitleText": "拍前准备" } },
+    { "path": "pages/order/shoot-status", "style": { "navigationBarTitleText": "拍摄状态" } },
+    { "path": "pages/order/modify", "style": { "navigationBarTitleText": "修改需求" } },
+    { "path": "pages/select/index", "style": { "navigationBarTitleText": "在线选片" } },
+    { "path": "pages/select/feedback", "style": { "navigationBarTitleText": "修图反馈" } },
+    { "path": "pages/select/confirm", "style": { "navigationBarTitleText": "确认成片" } },
+    { "path": "pages/delivery/index", "style": { "navigationBarTitleText": "成片交付" } },
+    { "path": "pages/reschedule/apply", "style": { "navigationBarTitleText": "改期 / 取消" } },
+    { "path": "pages/reschedule/date", "style": { "navigationBarTitleText": "选择新日期" } },
+    { "path": "pages/reschedule/fee", "style": { "navigationBarTitleText": "调度费支付登记" } },
+    { "path": "pages/reschedule/fee-result", "style": { "navigationBarTitleText": "支付状态" } },
+    { "path": "pages/cancel/index", "style": { "navigationBarTitleText": "取消订单" } },
+    { "path": "pages/refund/progress", "style": { "navigationBarTitleText": "退款进度" } }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "white",
+    "navigationBarTitleText": "SLOT 摄影预约",
+    "navigationBarBackgroundColor": "#17181C",
+    "backgroundColor": "#17181C",
+    "navigationStyle": "custom",
+    "_comment": "navigationStyle=custom：客户端为暗色沉浸式设计，状态栏与导航由 AppNavBar 组件统一承接"
+  }
+}

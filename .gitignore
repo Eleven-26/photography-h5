@@ -1,0 +1,55 @@
+# ==================== 依赖 ====================
+node_modules/
+.pnpm-store/
+
+# ==================== 构建产物 ====================
+# uni-app 编译输出（H5 / mp-weixin / app），由 npm run build:* 生成，不入库
+dist/
+unpackage/
+
+# ==================== 编辑器 / IDE ====================
+.idea/
+.vscode/
+.hbuilderx/
+*.swp
+*~
+
+# ==================== 系统文件 ====================
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# ==================== 日志 ====================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# ==================== 环境变量（.env.example 需保留，故加例外）====================
+.env
+.env.*
+*.local
+!.env.example
+
+# ==================== 缓存 / 临时目录 ====================
+.cache/
+.temp/
+.tmp/
+.vite/
+
+# ==================== 测试覆盖率 ====================
+coverage/
+
+# ==================== 项目内临时 / 废弃（勿入库）====================
+# 界面量测截图：UI 对稿过程的中间产物
+screenshots/
+# 已下线页面 / 废弃草稿
+_discard/
+
+# ==================== 以下资源「必须入库」，勿加入忽略 ====================
+# src/static/        图标与图片资源（AppIcon 依赖，缺失会显示白图/空白）
+# .assets-raw/       Ardot 导出的图标原始件 + manifest + finalize_icons.py
+#                    用于重新生成 src/static/icons/，是图标取错节点问题的唯一可追溯来源
+# src/utils/demo.js  演示数据（联调后手工移除，非自动生成产物）
+# package-lock.json  锁定依赖版本，保证团队/CI 安装结果一致

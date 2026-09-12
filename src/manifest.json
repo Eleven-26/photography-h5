@@ -1,0 +1,50 @@
+{
+  "name": "SLOT摄影预约",
+  "appid": "",
+  "description": "SLOT 摄影预约平台 · 客户端（H5 + 微信小程序）",
+  "versionName": "0.1.0",
+  "versionCode": "100",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true,
+    "nvueStyleCompiler": "uni-app",
+    "compilerVersion": 3,
+    "splashscreen": {
+      "alwaysShowBeforeRender": true,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {},
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>"
+        ]
+      },
+      "ios": {},
+      "sdkConfigs": {}
+    }
+  },
+  "quickapp": {},
+  "mp-weixin": {
+    "appid": "",
+    "setting": {
+      "urlCheck": false,
+      "es6": true,
+      "minified": true
+    },
+    "usingComponents": true,
+    "darkmode": false,
+    "_comment": "appid 由用户在微信公众平台注册后填入；urlCheck 关闭仅限开发期，提审前改回 true"
+  },
+  "h5": {
+    "title": "SLOT 摄影预约",
+    "router": {
+      "mode": "hash",
+      "_comment": "hash 路由：分享链接落地页无需服务端 rewrite，兼容微信内与普通浏览器双环境"
+    },
+    "sdkConfigs": {}
+  },
+  "vueVersion": "3"
+}

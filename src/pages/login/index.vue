@@ -61,6 +61,7 @@
  * 接口：api/auth.js（sendSmsCode / loginByCode，路径联调前与后端核对）
  */
 import { sendSmsCode, loginByCode } from '@/api/auth'
+import { setSlug } from '@/utils/slug'
 import { useUserStore } from '@/store/user'
 
 export default {
@@ -83,6 +84,8 @@ export default {
   onLoad(options) {
     // 401 跳转携带的回跳地址，登录成功后返回
     this.redirect = options.redirect || '/pages/index/index'
+    // 工作室短链标识：小程序端由进入参数携带（H5 端由 utils/slug.js 读 URL，无需处理）
+    if (options.slug) setSlug(options.slug)
   },
   beforeDestroy() {
     if (this.timer) clearInterval(this.timer)

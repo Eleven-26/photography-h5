@@ -62,6 +62,7 @@
  */
 import { sendSmsCode, loginByCode } from '@/api/auth'
 import { setSlug } from '@/utils/slug'
+import { setStaffId } from '@/utils/referrer'
 import { useUserStore } from '@/stores/user'
 
 export default {
@@ -84,8 +85,10 @@ export default {
   onLoad(options) {
     // 401 跳转携带的回跳地址，登录成功后返回
     this.redirect = options.redirect || '/pages/index/index'
-    // 工作室短链标识：小程序端由进入参数携带（H5 端由 utils/slug.js 读 URL，无需处理）
+    // 工作室短链标识与分享人：小程序端由进入参数携带（H5 端由 utils/slug.js、
+    // utils/referrer.js 读 URL，无需处理）
     if (options.slug) setSlug(options.slug)
+    if (options.staff_id) setStaffId(options.staff_id)
   },
   beforeUnmount() {
     if (this.timer) clearInterval(this.timer)

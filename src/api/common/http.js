@@ -19,6 +19,8 @@
 import { API_BASE } from '@/config/env'
 import { API_PREFIX } from '@/api/common/apiPath'
 import { getToken, clearAuth } from '@/utils/auth'
+import { getSlug } from '@/utils/slug'
+import { getStaffId } from '@/utils/referrer'
 
 /**
  * 不需要登录态的白名单 —— 与后端 h5 分组公开路由一一对应
@@ -55,6 +57,21 @@ export function request(options) {
   const header = { 'Content-Type': 'application/json' }
   const token = getToken()
   if (needAuth && token) header.Authorization = `Bearer ${token}`
+
+  // 租户定位：客户端一律不传 company_id（#29 防遍历），公开接口（studio/info、package/list、
+  // slot/list、asset/list 等）由后端按 slug 反查 —— 见 photography-server/internal/presentation/h5/h5.go
+  // → slugFrom（取值优先级：X-Slug 头 > body.slug > query ?slug=）。这里统一注入头，
+  // 避免每个 api 模块各传一次。getSlug() 会顺带从当前 URL 的 ?slug= 捕获并落缓存，
+  // 故客户打开分享链接（https://host/?slug=xxx）后首次请求即能定位到正确工作室。
+  const slug = getSlug()
+  if (slug) header['X-Slug'] = slug
+
+  // 分享人归属：客户从员工 A 的预约主页链接进入（...&staff_id=12）并下单时，订单归到 A 名下。
+  // 与 X-Slug 同款做法——这里统一注入头，避免每个 api 模块各传一次（后端仅
+  // /order/submit 消费该头，见 h5.go → staffFrom，其余接口带着无副作用）。
+  // 未携带时不加该头，后端按「非分享进入」处理：订单不落归属，由工作室后续指派。
+  const staffId = getStaffId()
+  if (staffId) header['X-Staff-Id'] = staffId
 
   return new Promise((resolve, reject) => {
     uni.request({

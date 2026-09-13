@@ -12,16 +12,29 @@
 const KEY_SLUG = 'slot_studio_slug'
 
 /**
+ * 上一次已解析过的 query string。
+ * 本函数现由请求层每次请求调用（见 api/common/http.js 注入 X-Slug 头），
+ * 若不加短路，每个请求都会触发一次同步存储写入（H5 端即 localStorage.setItem）。
+ * URL 未变化时直接返回，由调用方回退到缓存值。
+ */
+let lastSearch
+
+/**
  * 从 URL 查询串捕获 slug 并落缓存（仅 H5 有效；小程序无 window，直接跳过）
- * @returns {string} 捕获到的 slug，未捕获返回 ''
+ * @returns {string} 本次新捕获到的 slug；URL 未变化或无 slug 时返回 ''
  */
 export function captureSlug() {
   try {
-    if (typeof window !== 'undefined' && window.location && window.location.search) {
-      const s = new URLSearchParams(window.location.search).get('slug')
-      if (s) {
-        uni.setStorageSync(KEY_SLUG, s)
-        return s
+    if (typeof window !== 'undefined' && window.location) {
+      const search = window.location.search || ''
+      if (search === lastSearch) return '' // 同一 URL 已处理过，跳过重复解析与写入
+      lastSearch = search
+      if (search) {
+        const s = new URLSearchParams(search).get('slug')
+        if (s) {
+          uni.setStorageSync(KEY_SLUG, s)
+          return s
+        }
       }
     }
   } catch {

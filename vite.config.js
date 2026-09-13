@@ -16,6 +16,20 @@ const backendUrl = process.env.BACKEND_URL || 'http://localhost:8080'
 
 export default defineConfig({
   plugins: [uni()],
+  /* Dart Sass 弃用告警治理：
+   * 1) `@import` 已在源码中全部改为 `@use`（src/uni.scss、src/App.vue、src/styles/common.scss）；
+   * 2) 残留的 legacy-js-api 警告来自构建链路本身：uni-app 把 vite 精确锁在 5.2.8
+   *    （@dcloudio/vite-plugin-uni 的 peerDependencies 是固定版本、不是范围），而切换到
+   *    Dart Sass modern API 所需的 css.preprocessorOptions.scss.api 选项自 Vite 5.4 才提供，
+   *    当前无法根治，故显式静音以免刷屏。
+   *    待 uni-app 放开 vite 版本后，可改为 api: 'modern-compiler' 并移除 silenceDeprecations。 */
+  css: {
+    preprocessorOptions: {
+      scss: {
+        silenceDeprecations: ['legacy-js-api'],
+      },
+    },
+  },
   server: {
     host: '0.0.0.0',
     // 5173 是 SLOT 管理端的端口，客户端 H5 用独立端口，避免抢端口与 CORS 白名单冲突

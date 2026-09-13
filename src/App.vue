@@ -13,9 +13,10 @@ export default {
 </script>
 
 <style lang="scss">
-/* 全局样式：tokens + common（具体变量见 styles/tokens.scss） */
-@import '@/styles/tokens.scss';
-@import '@/styles/common.scss';
+/* 全局样式：设计 token 由 uni.scss 自动注入（见 src/uni.scss），此处只需公共类。
+ * 用 @use 取代 @import（Dart Sass 3.0 将移除 @import）；common.scss 内部自行
+ * @use tokens —— 模块隔离下它不会继承本文件的作用域。 */
+@use '@/styles/common.scss' as *;
 
 /* uni-app 全局默认文字色与字体（客户端暗色） */
 page {

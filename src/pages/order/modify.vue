@@ -80,13 +80,13 @@ export default {
   computed: {
     quoteTitle() {
       const q = this.quote
-      if (!q || !q.id) return '家庭纪念写真 · ¥2,680' /* 演示（联调后移除） */
-      return `${q.package_name || '拍摄服务'} · ¥${Number(q.total_price || 0).toLocaleString()}`
+      if (!q || !q.id) return '—'
+      return `${q.package_name || q.title || '拍摄服务'} · ¥${Number(q.total_price || 0).toLocaleString()}`
     },
     quoteMeta() {
       const q = this.quote
-      if (!q || !q.id) return '8月8日 10:00 · 越秀公园'
-      return [q.shoot_date, q.shoot_time, q.shoot_address].filter(Boolean).join(' · ')
+      if (!q || !q.id) return '—'
+      return [q.shoot_date, q.shoot_time, q.location].filter(Boolean).join(' · ') || '—'
     },
   },
   onLoad(query) {
@@ -96,12 +96,9 @@ export default {
   methods: {
     async loadData() {
       if (!this.quoteId) return
-      try {
-        const res = await getQuoteDetail(this.quoteId)
-        this.quote = (res && res.data) || {}
-      } catch (e) {
-        /* 演示数据兜底（computed 内），不打断页面 */
-      }
+      /* 后端 /quote/detail 返回 model.Quote（rpc 已解包 data） */
+      const res = await getQuoteDetail(this.quoteId).catch(() => null)
+      this.quote = res || {}
     },
     toggleType(t) {
       const i = this.form.types.indexOf(t)

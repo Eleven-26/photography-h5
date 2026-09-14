@@ -19,7 +19,7 @@
         <view class="page-date__legend">
           <AppIcon name="info-sm" :size="13" />
           <text class="page-date__legend-text">
-            10日、14日已被其他客户预约 · 18日摄影师临时关闭（外出拍摄）
+            选择日期后即时展示该日可约时段 · 已售出或摄影师关闭的时段不可选
           </text>
         </view>
       </AppCalendar>
@@ -74,21 +74,15 @@
  * C03 选择日期（画板 1:2071 一比一还原）
  *
  * 数据链路：套餐详情 C02「选择日期」→ 本页 → C04 需求填写
- * 档期数据：getAvailableSlots（biz_slot_template 规则 + biz_calendar_block 已占用过滤），
- *          接口路径待联调核对；请求失败降级为演示数据（已标注），保证页面可预览。
+ * 档期数据：getAvailableSlots → 后端 POST /slot/list（body: { date, photographer_id? }）
+ *          返回 ClientSlot[]：{ start_time, end_time, available }。
+ *          后端按单日查询，无「整月可约标记」接口 —— 故日历不预设点标记，
+ *          选定日期后即时拉取该日真实时段；请求失败保留空态，不注入演示档期。
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppCalendar from '@/components/AppCalendar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getAvailableSlots } from '@/api/slot'
-
-/* 时段模板：与 C03 稿一致；16:00-18:00 稿内为禁用态 */
-const DEMO_SLOTS = [
-  { range: '09:00-11:00', disabled: false },
-  { range: '11:00-14:00', disabled: false },
-  { range: '14:00-16:00', disabled: false },
-  { range: '16:00-18:00', disabled: true },
-]
 
 export default {
   components: { AppNavBar, AppCalendar, AppButton },
@@ -98,8 +92,8 @@ export default {
       packageId: 0,
       year: now.getFullYear(),
       month: now.getMonth() + 1,
-      calendarMarks: {}, /* key yyyy-MM-dd → { dot, disabled } */
-      daySlots: [],
+      calendarMarks: {}, /* 后端无整月标记接口，恒为空 */
+      daySlots: [],      // [{ range, disabled }]
       form: { shoot_date: '', shoot_time: '' },
       loading: false,
     }
@@ -122,56 +116,39 @@ export default {
   },
   onLoad(query) {
     this.packageId = Number(query.packageId || 0)
-    this.loadMonth()
   },
   methods: {
-    /** 拉取当月档期标记；失败降级演示数据（联调时删除降级分支） */
-    async loadMonth() {
-      if (this.loading) return
+    /** 拉取指定日期的真实可约时段（slot/list 按日查询） */
+    async loadSlots(date) {
+      this.daySlots = []
+      if (!date) return
       this.loading = true
       try {
-        const res = await getAvailableSlots({
-          package_id: this.packageId,
-          year: this.year,
-          month: this.month,
-        })
-        this.applySlots(res)
+        const res = await getAvailableSlots({ date })
+        const list = Array.isArray(res) ? res : (res && res.list) || []
+        this.daySlots = list.map((s) => ({
+          range: `${s.start_time}-${s.end_time}`,
+          disabled: !s.available,
+        }))
       } catch (e) {
-        /* ⚠️ 演示数据：对齐 C03 稿口径（红点=已约 / 金点=摄影师关闭），联调后移除 */
-        this.calendarMarks = this.demoMarks()
-        if (this.form.shoot_date) this.daySlots = DEMO_SLOTS
+        /* request 层已 toast；不注入演示时段（避免把接口异常伪装成「有可约档期」） */
+        this.daySlots = []
       } finally {
         this.loading = false
       }
     },
-    /** 期望返回 { days: [{date, status}], slots: [{range, disabled}] } —— 字段联调核对 */
-    applySlots(res) {
-      const data = res && res.data ? res.data : {}
-      const marks = {}
-      ;(data.days || []).forEach((d) => {
-        marks[d.date] = { dot: d.status === 1 ? 'booked' : d.status === 2 ? 'blocked' : '', disabled: d.status === 1 || d.status === 2 }
-      })
-      this.calendarMarks = marks
-      if (data.slots) this.daySlots = data.slots
-      else if (this.form.shoot_date) this.daySlots = DEMO_SLOTS
-    },
-    /* 演示标记：本月 10/14 已约、18 关闭（对齐 C03 图例文案） */
-    demoMarks() {
-      const mk = (day, dot) => ({
-        [`${this.year}-${String(this.month).padStart(2, '0')}-${String(day).padStart(2, '0')}`]: { dot, disabled: true },
-      })
-      return { ...mk(10, 'booked'), ...mk(14, 'booked'), ...mk(18, 'blocked') }
-    },
     onMonthChange({ year, month }) {
       this.year = year
       this.month = month
-      this.loadMonth()
+      /* 无整月标记接口：切月仅清空已选日期与时段，待用户选日后再查 */
+      this.form.shoot_date = ''
+      this.form.shoot_time = ''
+      this.daySlots = []
     },
     onSelectDate(key) {
       this.form.shoot_date = key
       this.form.shoot_time = ''
-      /* 切日重取该日时段；演示数据直接用模板 */
-      this.daySlots = DEMO_SLOTS
+      this.loadSlots(key)
     },
     onSelectSlot(s) {
       if (s.disabled) return

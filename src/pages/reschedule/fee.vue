@@ -34,7 +34,7 @@
       <!-- ③ 收款码 / 凭证（同构 C16） -->
       <view v-if="form.method !== 'bank'" class="page-rfee__qr">
         <view class="page-rfee__qr-img"><text>收款码</text></view>
-        <text class="page-rfee__qr-name">{{ payeeName }} · {{ form.method === 'wechat' ? '微信' : '支付宝' }}收款码</text>
+        <text class="page-rfee__qr-name">{{ payeeName ? `${payeeName} · ` : '' }}{{ form.method === 'wechat' ? '微信' : '支付宝' }}收款码</text>
         <view class="page-rfee__qr-amount">
           <text class="page-rfee__qr-amount-pre">请用{{ form.method === 'wechat' ? '微信' : '支付宝' }}扫码，转账 </text>
           <text class="page-rfee__qr-amount-num">¥{{ amountText }}</text>
@@ -92,8 +92,7 @@
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
-import { submitPaymentMark } from '@/api/payment'
-import { DEMO_BANK } from '@/utils/demo'
+import { getPaymentMethods, submitPaymentMark } from '@/api/payment'
 
 export default {
   components: { AppNavBar, AppButton },
@@ -104,9 +103,9 @@ export default {
       fee: 0,
       resFeeRate: 20,
       methods: [
-        { key: 'wechat', icon: 'wechat', name: '微信扫码转账', sub: '扫描摄影师收款码 · 无需上传凭证' },
-        { key: 'alipay', icon: 'alipay', name: '支付宝扫码转账', sub: '扫描摄影师收款码 · 无需上传凭证' },
-        { key: 'bank', icon: 'bank', name: '银行卡转账', sub: '需上传转账凭证 · 摄影师确认收款（登记）' },
+        { key: 'wechat', type: 'wechat', icon: 'wechat', name: '微信扫码转账', sub: '扫描摄影师收款码 · 无需上传凭证' },
+        { key: 'alipay', type: 'alipay', icon: 'alipay', name: '支付宝扫码转账', sub: '扫描摄影师收款码 · 无需上传凭证' },
+        { key: 'bank', type: 'bank', icon: 'bank', name: '银行卡转账', sub: '需上传转账凭证 · 摄影师确认收款（登记）' },
       ],
       form: { method: 'wechat', voucher: '' },
       submitting: false,
@@ -120,13 +119,20 @@ export default {
     totalText() {
       return Number(this.order.total_amt || this.order.base_price || 0) || 2680
     },
-    payeeName() { return this.order.photographer_name || '路先生' },
-    /* 银行卡收款信息：后端摄影师账户字段联调核对，暂用演示数据兜底（联调后移除） */
+    /* 收款人：订单摄影师（model.Order.photographer）→ 收款方式 account_name */
+    payeeName() {
+      if (this.order.photographer) return this.order.photographer
+      const m = this.methods.find((x) => x.key === this.form.method)
+      return (m && m.account_name) || ''
+    },
+    /* 银行卡收款信息：取已启用收款方式里 type=bank 那条（account_name / account_no / name）。
+       ⚠️ 后端收款方式无独立「开户行」字段，第三行展示该方式 name。 */
     bankInfo() {
+      const bank = this.methods.find((m) => m.type === 'bank')
       return {
-        holder: this.order.bank_holder || DEMO_BANK.holder,
-        card_no: this.order.bank_card_no || DEMO_BANK.card_no,
-        bank: this.order.bank_name || DEMO_BANK.bank,
+        holder: (bank && bank.account_name) || '',
+        card_no: (bank && bank.account_no) || '',
+        bank: (bank && bank.name) || '',
       }
     },
     /* 提示语按渠道区分：银行卡需传凭证，扫码渠道无需；调度费口径保留 */
@@ -146,9 +152,30 @@ export default {
     async loadData() {
       if (!this.orderId) return
       try {
-        const res = await getOrderDetail(this.orderId)
-        this.order = (res && res.data && res.data.order) || (res && res.data) || {}
-      } catch (e) { /* 演示兜底：fee 已从路由带入 */ }
+        const [orderRes, methodRes] = await Promise.all([
+          getOrderDetail(this.orderId),
+          getPaymentMethods(),
+        ])
+        /* rpc 已解包 data → ClientOrderDetail{order, payments, ...}（此前读 res.data.order 恒为空） */
+        this.order = (orderRes && orderRes.order) || {}
+        const list = Array.isArray(methodRes) ? methodRes : (methodRes && methodRes.list) || []
+        if (list.length) {
+          /* 字段：id / name / type / account_name / account_no / qrcode */
+          this.methods = list.map((m) => ({
+            key: m.type || String(m.id),
+            type: m.type,
+            account_name: m.account_name,
+            account_no: m.account_no,
+            qrcode: m.qrcode,
+            name: m.name,
+            sub: m.type === 'bank' ? '需上传转账凭证 · 摄影师确认收款（登记）' : '扫描摄影师收款码 · 无需上传凭证',
+            icon: m.type === 'alipay' ? 'alipay' : m.type === 'bank' ? 'bank' : 'wechat',
+            id: m.id,
+          }))
+        }
+      } catch (e) {
+        /* 静默：request 层已 toast；调度费金额由路由带入，不受订单拉取失败影响 */
+      }
     },
     /** 复制银行卡号：去掉空格后写剪贴板 */
     copyCard() {
@@ -171,13 +198,14 @@ export default {
         uni.showToast({ title: '请先上传转账凭证', icon: 'none' })
         return
       }
+      const method = this.methods.find((m) => m.key === this.form.method)
       this.submitting = true
       try {
         await submitPaymentMark({
           order_id: this.orderId,
           type: 'reschedule', /* ⚠️ B12：调度费收款 type 后端枚举缺位，联调对齐 */
           amount: this.fee,
-          method_id: undefined,
+          method_id: method && method.id,
           voucher: this.form.voucher || undefined,
         })
         uni.redirectTo({ url: `/pages/reschedule/fee-result?orderId=${this.orderId}&fee=${this.fee}` })

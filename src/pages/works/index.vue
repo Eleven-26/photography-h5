@@ -4,7 +4,7 @@
          作品列表 · 画板 C24（2026-09-07 Ardot 实测 1:1303 一比一还原）
          结构：导航 → 摄影师信息行（头像/名/简介/联系）→ 分类筛选横滑
                → 双列作品网格 → 毛玻璃底栏（定制需求）
-         数据源：getAssets（biz_asset）· getStudioInfo().studio（信息行）
+         数据源：getAssets（biz_asset）· getStudioInfo（StudioSetting，信息行文案）
          ============================================================ -->
     <!-- 状态栏占位：设计稿顶部 Iphone 44px（C24 状态栏 0-44，导航行 44-88）。
          H5 由 .status-bar 固定 44px；MP 端 AppNavBar 已用系统值定位，避免双计。 -->
@@ -22,7 +22,7 @@
         mode="aspectFill"
       />
       <view class="works__profile-main">
-        <text class="works__name ellipsis">{{ studio.name || '路先生' }}</text>
+        <text class="works__name ellipsis">{{ photographerName }}</text>
         <text class="works__desc ellipsis">{{ profileDesc }}</text>
       </view>
       <AppButton type="secondary" size="hug" class="works__contact" @click="onContact">
@@ -56,9 +56,9 @@
 <script>
 /**
  * 作品列表（画板 C24）· 2026-09-07 对稿还原
- * 数据源：getAssets（biz_asset，分类参数待联调核对）、getStudioInfo（工作室信息行）
- * 分类筛选：设计稿演示「全部/家庭纪念/亲子写真/户外写真/纪实」，
- *          后端 biz_asset 分类字段名联调核对后接入真实枚举。
+ * 数据源：getAssets（biz_asset，后端 /asset/list 支持 category 过滤 + 分页）
+ *        getStudioInfo（/studio/info 直接返回 model.StudioSetting，非 {studio} 包装）
+ * 分类筛选：来自真实作品数据的 category 去重，不再内置演示枚举。
  */
 import { getStudioInfo } from '@/api/studio'
 import { getAssets } from '@/api/asset'
@@ -69,31 +69,28 @@ import AppFooter from '@/components/AppFooter.vue'
 import AppWorkGrid from '@/components/AppWorkGrid.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 
-/* 演示兜底：画板导出原图（联调后移除） */
-const DEMO_ASSETS = [1, 2, 3, 4, 5, 6].map((n) => ({ id: `demo-w${n}`, cover_url: `/static/img/work-${n}.jpg` }))
-
 export default {
   components: { AppNavBar, AppButton, AppFooter, AppWorkGrid, AppEmpty },
   data() {
     return {
-      studio: {},
-      assets: [],
+      studio: {},      // model.StudioSetting（slogan / intro）
+      allAssets: [],   // 全量作品（分类来源 + 本地筛选底稿）
+      assets: [],      // 当前分类下的展示列表
       loading: false,
       activeCat: '全部',
-      // 分类（C24 实测演示文案；真实分类待后端字段确认，联调核对）
-      categories: ['全部', '家庭纪念', '亲子写真', '户外写真', '纪实'],
+      categories: ['全部'],
     }
   },
   computed: {
-    /** 信息行副标题：城市 · 擅长类型 · 评分（C24 实测「广州 · 家庭/亲子/户外写真 · 5.0 ★」） */
+    /** 信息行标题：取作品快照里的摄影师（model.Asset.photographer），无则泛称 */
+    photographerName() {
+      const hit = this.allAssets.find((a) => a.photographer)
+      return (hit && hit.photographer) || '摄影师'
+    },
+    /** 信息行副标题：工作室宣传语 / 简介（StudioSetting 真实字段，无则不显示该行） */
     profileDesc() {
       const s = this.studio || {}
-      const parts = [
-        s.city || '广州',
-        s.tags || '家庭/亲子/户外写真',
-        `${s.rating || '5.0'} ★`,
-      ]
-      return parts.filter(Boolean).join(' · ')
+      return s.slogan || s.intro || ''
     },
   },
   onLoad() {
@@ -105,26 +102,32 @@ export default {
       try {
         // 工作室信息行（失败不阻塞作品加载）
         getStudioInfo()
-          .then((home) => { this.studio = (home && home.studio) || {} })
+          .then((info) => { this.studio = info || {} })
           .catch(() => {})
-        // 分类参数字段名联调核对（category/category_name）
-        const params = this.activeCat === '全部' ? {} : { category: this.activeCat }
-        const res = await getAssets(params)
-        this.assets = (res && (res.list || res.items)) || []
+        // 一次取全量作品：分类胶囊由返回数据的 category 去重得到，切换分类走本地筛选
+        const res = await getAssets({ page: 1, page_size: 100 })
+        this.allAssets = (res && res.list) || []
+        const cats = [...new Set(this.allAssets.map((a) => a.category).filter(Boolean))]
+        this.categories = ['全部', ...cats]
+        if (this.activeCat !== '全部' && !cats.includes(this.activeCat)) this.activeCat = '全部'
+        this.applyFilter()
       } catch (e) {
         // request 层已 toast；保留已有数据不清空
       } finally {
         this.loading = false
       }
-      // 演示兜底：接口无数据时用画板原图占位（联调后移除）
-      if (!this.assets.length) this.assets = DEMO_ASSETS
+    },
+    applyFilter() {
+      this.assets = this.activeCat === '全部'
+        ? this.allAssets
+        : this.allAssets.filter((a) => a.category === this.activeCat)
     },
     switchCat(cat) {
       if (cat === this.activeCat) return
       this.activeCat = cat
-      this.loadData()
+      this.applyFilter()
     },
-    /** 站内不建 IM：联系 = 拨打电话（需求文档 §3.2） */
+    /** 站内不建 IM：联系 = 拨打电话（需求文档 §3.2）；后端未下发工作室电话时由 util 兜底提示 */
     onContact() {
       contactPhotographer(this.studio.mobile)
     },

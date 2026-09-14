@@ -57,7 +57,7 @@
       <!-- C17 实测 20px 星形图标 -->
       <AppIcon name="star" :size="20" />
       <view class="page-dv__review-main">
-        <text class="page-dv__review-title">给{{ photographer }}评价</text>
+        <text class="page-dv__review-title">给{{ photographerLabel }}评价</text>
         <text class="page-dv__review-sub">分享你的拍摄体验</text>
       </view>
       <AppIcon name="chevron-right-sm" :size="15" />
@@ -73,16 +73,17 @@
 <script>
 /**
  * C17 成片交付（画板 1:1973 一比一还原）
- * 数据源：biz_delivery（stage 5-已交付）+ biz_delivery_item（kind=3）
+ * 数据源：biz_delivery（stage 5-已交付）+ biz_delivery_item（kind=3 精修成品）+ biz_order 快照
  * 下载：高清包地址联调对接（biz_asset / 打包下载接口）；当前 H5 用 previewImage 降级 +
- *       downloadFile 单张下载演示；批量下载建议后端出 zip 链接（联调确认）
- * 有效期：交付日期 + 30 天（稿面演示 9月15日）；联调改读后端 expire 字段
+ *       downloadFile 单张下载；批量下载建议后端出 zip 链接（联调确认）
+ * 有效期：订单快照 order.delivery_expire_at（后端落库，前端只格式化与计算剩余天数）
  * 评价：biz_order_review 表已建，评价页设计稿未出——入口先占位 toast
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getDeliveryDetail, getDeliveryItems } from '@/api/delivery'
+import { getOrderDetail } from '@/api/order'
 import { formatAmount } from '@/utils/format'
 
 export default {
@@ -91,9 +92,8 @@ export default {
     return {
       orderId: 0,
       deliveryId: null,
-      photographer: '路先生',
-      expireDate: '9月15日',
-      daysLeft: 30,
+      photographer: '',    // 订单快照摄影师（未指派时用泛称）
+      expireAt: '',        // biz_order.delivery_expire_at
       items: [],
       downloading: false,
     }
@@ -101,6 +101,24 @@ export default {
   computed: {
     previewItems() {
       return this.items.slice(0, 6)
+    },
+    /** 摄影师称谓：未指派时用泛称，避免出现「给评价」 */
+    photographerLabel() {
+      return this.photographer || '摄影师'
+    },
+    /** 下载有效期（MM月dd日）；后端未下发时为「—」 */
+    expireDate() {
+      if (!this.expireAt) return '—'
+      const d = new Date(String(this.expireAt).replace(/-/g, '/'))
+      if (Number.isNaN(d.getTime())) return '—'
+      return `${d.getMonth() + 1}月${d.getDate()}日`
+    },
+    /** 剩余天数（按有效期截止日与今日之差，向上取整） */
+    daysLeft() {
+      if (!this.expireAt) return 0
+      const d = new Date(String(this.expireAt).replace(/-/g, '/'))
+      if (Number.isNaN(d.getTime())) return 0
+      return Math.max(0, Math.ceil((d.getTime() - Date.now()) / 86400000))
     },
   },
   onLoad(query) {
@@ -110,19 +128,20 @@ export default {
   methods: {
     formatAmount,
     async loadData() {
-      try {
-        /* /delivery/detail/:id 的 :id 是 order_id，返回 { delivery, items } */
-        const detail = await getDeliveryDetail(this.orderId)
-        const d = (detail && detail.delivery) || null
-        this.deliveryId = d && d.id
-        this.photographer = (d && d.photographer_name) || this.photographer
-        const res = await getDeliveryItems(this.orderId)
-        const list = Array.isArray(res) ? res : (res && res.data) || []
-        this.items = list.map((it) => ({ id: it.id, url: it.url || it.file_url }))
-      } catch (e) {
-        /* 联调后移除：演示 24 张 */
-        this.items = Array.from({ length: 24 }, (_, i) => ({ id: i + 1, url: '' }))
-      }
+      /* /delivery/detail/:id 的 :id 是 order_id，返回 { delivery, items } */
+      const [detail, orderRes] = await Promise.all([
+        getDeliveryDetail(this.orderId).catch(() => null),
+        getOrderDetail(this.orderId).catch(() => null),
+      ])
+      const d = (detail && detail.delivery) || null
+      this.deliveryId = d && d.id
+      const order = (orderRes && orderRes.order) || {}
+      this.photographer = order.photographer || ''
+      this.expireAt = order.delivery_expire_at || ''
+      const res = await getDeliveryItems(this.orderId).catch(() => [])
+      const list = Array.isArray(res) ? res : (res && res.list) || []
+      /* 成片网格只含精修成品（kind=3） */
+      this.items = list.filter((it) => Number(it.kind) === 3).map((it) => ({ id: it.id, url: it.url || '' }))
     },
     previewAll() {
       const urls = this.items.map((it) => it.url).filter(Boolean)

@@ -10,7 +10,7 @@
       <AppIcon name="clock-processing" :size="72" />
       <text class="page-fr__head-title">等待摄影师确认收款</text>
       <view class="page-fr__head-sub">
-        <text class="page-fr__head-dim">你已通过{{ payMethodText }}转账 </text>
+        <text class="page-fr__head-dim">{{ payMethodText ? `你已通过${payMethodText}转账 ` : '你已转账 ' }}</text>
         <text class="page-fr__head-amt">¥{{ amountText }}</text>
       </view>
       <text v-if="markAt" class="page-fr__head-time">转账时间：{{ markAt }}</text>
@@ -72,10 +72,11 @@
  * 数据源：biz_order_payment（type=final 的登记记录）→ getPaymentList；steps 由记录推导：
  *   1 确认成片（done）2 差价自动计入尾款（done，差价=0 时隐藏）3 你已转账尾款（done）
  *   4 等待摄影师确认尾款收款（current）5 开放成片下载（future）
- * 摄影师确认收款后本页语义变为「已确认/开放下载」（联调：按 payment_status 切换文案）
+ * 金额与差价取订单快照：order.final_amt（尾款）/ order.addon_amount（加选差价）。
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
+import { getOrderDetail } from '@/api/order'
 import { getPaymentList } from '@/api/payment'
 import { formatAmount } from '@/utils/format'
 
@@ -84,12 +85,12 @@ export default {
   data() {
     return {
       orderId: 0,
-      amount: 2116,        // biz_order_payment.amount（type=final）
-      payMethodText: '微信',
-      markAt: '',          // 转账时间（client_marked_at，B9 口径字段）
-      extraFee: 240,       // 差价（=0 时第 2 步隐藏）
-      photographer: '路先生',
-      confirmed: false,    // 摄影师是否已确认收款（payment_status=2）
+      order: {},           // 订单主体（金额快照 + 摄影师姓名）
+      amount: 0,           // biz_order_payment.amount（type=final）
+      payMethodText: '',   // 收款方式名称快照（model.OrderPayment.method_name）
+      markAt: '',          // 转账时间（model.OrderPayment.paid_at）
+      extraFee: 0,         // 加选差价（order.addon_amount，=0 时第 2 步隐藏）
+      confirmed: false,    // 摄影师是否已确认收款（payment.status=2）
       steps: [],
     }
   },
@@ -103,28 +104,32 @@ export default {
   methods: {
     formatAmount,
     async loadData() {
-      try {
-        const res = await getPaymentList(this.orderId)
-        const list = (res && res.data && res.data.list) || res || []
-        const finalRec = list.find((p) => p.type === 'final') || {}
-        this.amount = Number(finalRec.amount || this.amount)
-        this.markAt = finalRec.client_marked_at || finalRec.created_at || ''
-        this.extraFee = Number(finalRec.extra_fee || 0)
-        this.confirmed = Number(finalRec.status) === 2
-      } catch (e) {
-        /* ⚠️ 演示数据（对齐 C16A 稿面），联调后移除 */
-        this.markAt = '8月20日 16:20'
-      }
+      /* 两个接口互不依赖，并行取；任一失败不影响另一侧的渲染 */
+      const [payRes, orderRes] = await Promise.all([
+        getPaymentList(this.orderId).catch(() => []),
+        getOrderDetail(this.orderId).catch(() => null),
+      ])
+      /* 后端 response.OK(c, list) 直接出数组（见 h5.go → PaymentList → response.OK） */
+      const list = Array.isArray(payRes) ? payRes : (payRes && payRes.list) || []
+      const finalRec = list.find((p) => p.type === 'final') || {}
+      this.order = (orderRes && orderRes.order) || {}
+      this.amount = Number(finalRec.amount || this.order.final_amt || 0)
+      this.markAt = finalRec.paid_at || ''
+      this.payMethodText = finalRec.method_name || ''
+      this.extraFee = Number(this.order.addon_amount || 0)
+      this.confirmed = Number(finalRec.status) === 2
       this.buildSteps()
     },
     buildSteps() {
+      /* 摄影师姓名取自订单快照；未指派时为「摄影师」泛称 */
+      const who = this.order.photographer || '摄影师'
       this.steps = [
-        { state: 'done', title: '确认成片', sub: this.confirmedAt || '精修结果已确认' },
+        { state: 'done', title: '确认成片', sub: '精修结果已确认' },
         ...(this.extraFee > 0 ? [{ state: 'done', title: '差价自动计入尾款', sub: `加选差价 ¥${formatAmount(this.extraFee)} 已并入尾款` }] : []),
         { state: 'done', title: '你已转账尾款', sub: [this.markAt, this.payMethodText, `¥${this.amountText}`].filter(Boolean).join(' · ') },
         this.confirmed
           ? { state: 'done', title: '摄影师已确认收款', sub: '登记完成' }
-          : { state: 'current', title: '等待摄影师确认尾款收款', sub: `进行中... ${this.photographer}将核对收款记录并登记` },
+          : { state: 'current', title: '等待摄影师确认尾款收款', sub: `进行中... ${who}将核对收款记录并登记` },
         { state: 'future', title: '开放成片下载', sub: '确认收款后开放高清成片下载' },
       ]
     },
@@ -132,8 +137,9 @@ export default {
       uni.reLaunch({ url: '/pages/index/index' })
     },
     contact() {
-      /* 联系摄影师：拨号（H5 tel 协议，小程序用 makePhoneCall） */
-      uni.makePhoneCall({ phoneNumber: '13800000000', fail: () => {} }) /* 联调：读订单 photographer_phone */
+      /* 后端订单/工作室设置均不下发摄影师手机号（model.Order 无 mobile 字段），
+         不做假号码兜底，改为引导走工作室客服 */
+      uni.showToast({ title: '请通过工作室客服联系摄影师', icon: 'none' })
     },
   },
 }

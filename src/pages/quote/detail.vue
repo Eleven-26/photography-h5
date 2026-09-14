@@ -11,8 +11,8 @@
       <!-- ① 报价头：14@0.5 / 24 Bold / 编号+有效期 14@0.4（C06 实测） -->
       <view class="page-quote__head">
         <text class="page-quote__head-tip">摄影师已为你准备报价</text>
-        <text class="page-quote__head-name">{{ quote.quote_name || '定制拍摄报价' }}</text>
-        <text class="page-quote__head-meta">报价编号 {{ quote.quote_no || '—' }} · 有效期至 {{ validUntilText }}</text>
+        <text class="page-quote__head-name">{{ quoteTitle }}</text>
+        <text class="page-quote__head-meta">报价编号 {{ quote.code || '—' }} · 有效期至 {{ validUntilText }}</text>
       </view>
 
       <!-- ② 拍摄信息卡：#25262A r16 pad16，行 y10 白@0.05 分隔（C06 实测） -->
@@ -38,7 +38,7 @@
           <text class="page-quote__row-value page-quote__row-value--bold">¥{{ totalText }}</text>
         </view>
         <view class="page-quote__row">
-          <text class="page-quote__row-label">定金 (30%)</text>
+          <text class="page-quote__row-label">定金{{ depositRate ? ` (${depositRate}%)` : '' }}</text>
           <text class="page-quote__row-value page-quote__row-value--deposit">¥{{ depositText }}</text>
         </view>
         <view class="page-quote__row">
@@ -66,37 +66,74 @@
  *
  * 流程口径①：无「拒绝报价」；有疑问走「提出修改」，谈不拢报价按 valid_until 自然过期。
  * 确认报价 → acceptQuote（写 accept_at，后端自动生成订单回写 order_id）→ 跳定金支付登记。
- * 报价明细结构：套餐快照 + addons JSON（对齐 biz_quote，无 items[] 明细行）。
- * 演示数据：接口未联调时的降级展示（已标注，联调后移除）。
+ * 数据源：biz_quote（标题/编号/拍摄信息/金额）+ biz_package（定金、服务内容口径）。
+ * 「服务内容」由套餐真实字段拼装（精修张数 / 原片 / 修改次数 / 交付周期），不写死示例。
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getQuoteDetail, acceptQuote, requestQuoteRevision } from '@/api/quote'
+import { getPackageDetail } from '@/api/package'
 
 export default {
   components: { AppNavBar, AppButton },
   data() {
     return {
       quoteId: 0,
-      quote: {},
-      serviceLines: ['2.5小时拍摄', '20张精修 + 100+张原片', '2次修改机会', '7个工作日交付'],
+      quote: {},        // model.Quote
+      pkg: {},          // model.Package（报价关联套餐，服务内容/定金来源）
       submitting: false,
     }
   },
   computed: {
+    quoteTitle() {
+      return this.quote.title || this.quote.package_name || '定制拍摄报价'
+    },
     infoRows() {
+      const q = this.quote
       return [
-        { label: '拍摄日期', value: this.quote.shoot_date || '—' },
-        { label: '拍摄时间', value: this.quote.shoot_time || '—' },
-        { label: '拍摄地点', value: this.quote.shoot_address || '—' },
-        { label: '拍摄人数', value: this.quote.people_count || '—' },
-        { label: '拍摄风格', value: this.quote.shoot_style || '—' },
+        { label: '拍摄日期', value: q.shoot_date || '—' },
+        { label: '拍摄时间', value: q.shoot_time || '—' },
+        { label: '拍摄地点', value: q.location || '—' },
+        { label: '拍摄人数', value: q.people_count || '—' },
+        { label: '拍摄时长', value: q.duration_hours ? `${q.duration_hours}小时` : '—' },
       ]
     },
-    /* 金额：后端 DECIMAL 元，前端只格式化不计算（pay.js 口径） */
+    /** 服务内容：优先套餐真实字段；套餐缺失时退回报价时长等已下发字段 */
+    serviceLines() {
+      const p = this.pkg || {}
+      const q = this.quote || {}
+      const lines = []
+      if (p.shoot_hours || q.duration_hours) lines.push(`${p.shoot_hours || q.duration_hours}小时拍摄`)
+      if (p.photos_included) lines.push(`${p.photos_included}张精修`)
+      if (p.raw_count) lines.push(`${p.raw_count}张原片`)
+      if (p.revision_count) lines.push(`${p.revision_count}次修改机会`)
+      if (p.delivery_days) lines.push(`${p.delivery_days}个工作日交付`)
+      if (p.content_desc) lines.push(p.content_desc)
+      /* 报价加项清单（JSON 数组，后端 biz_quote.addons） */
+      if (q.addons) {
+        try {
+          const arr = typeof q.addons === 'string' ? JSON.parse(q.addons) : q.addons
+          if (Array.isArray(arr)) {
+            arr.forEach((a) => {
+              const name = (a && (a.name || a.title)) || ''
+              const price = Number((a && (a.price || a.amount)) || 0)
+              if (name) lines.push(price > 0 ? `${name} +¥${price.toLocaleString()}` : name)
+            })
+          }
+        } catch (e) { /* addons 非合法 JSON 时忽略该行 */ }
+      }
+      return lines
+    },
+    /* 金额：后端 DECIMAL 元，前端只格式化不计算（金额计算一律以服务端返回为准） */
     totalNum() { return Number(this.quote.total_price || 0) },
-    depositNum() { return Math.round(this.totalNum * 0.3) },
-    finalNum() { return this.totalNum - this.depositNum },
+    /** 定金比例（biz_package.deposit_rate%）；无套餐时不在标签展示百分比 */
+    depositRate() { return Number(this.pkg.deposit_rate || 0) },
+    /** 定金金额：优先套餐快照 deposit_amt；缺失时按比例兜底（仅展示口径） */
+    depositNum() {
+      if (this.pkg.deposit_amt) return Number(this.pkg.deposit_amt)
+      return this.depositRate ? Math.round(this.totalNum * this.depositRate / 100) : 0
+    },
+    finalNum() { return Math.max(0, this.totalNum - this.depositNum) },
     totalText() { return this.totalNum.toLocaleString() },
     depositText() { return this.depositNum.toLocaleString() },
     finalText() { return this.finalNum.toLocaleString() },
@@ -104,6 +141,7 @@ export default {
       const v = this.quote.valid_until
       if (!v) return '—'
       const d = new Date(String(v).replace(/-/g, '/'))
+      if (Number.isNaN(d.getTime())) return '—'
       return `${d.getMonth() + 1}月${d.getDate()}日`
     },
   },
@@ -113,22 +151,12 @@ export default {
   },
   methods: {
     async loadQuote() {
-      try {
-        const res = await getQuoteDetail(this.quoteId)
-        this.quote = (res && res.data) || {}
-      } catch (e) {
-        /* ⚠️ 演示数据（对齐 C06 稿），联调后移除 */
-        this.quote = {
-          quote_name: '家庭纪念写真-定制V2',
-          quote_no: 'Q20260808001',
-          valid_until: '2026-08-11 23:59:59',
-          shoot_date: '8月8日 周六',
-          shoot_time: '10:00 - 12:30',
-          shoot_address: '越秀公园',
-          people_count: '3人 (2大1小)',
-          shoot_style: '温馨家庭',
-          total_price: 2680,
-        }
+      /* 后端 /quote/detail 返回 model.Quote（rpc 已解包 data） */
+      const res = await getQuoteDetail(this.quoteId).catch(() => null)
+      this.quote = res || {}
+      if (this.quote.package_id) {
+        const pkg = await getPackageDetail(this.quote.package_id).catch(() => null)
+        this.pkg = pkg || {}
       }
     },
     /** 提出修改：无拒绝流程的唯一异议出口（谈不拢自然过期，X1 仅指超时） */

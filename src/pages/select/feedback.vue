@@ -102,7 +102,8 @@
  * C14 修图反馈（画板 1:1105）
  * 逐张反馈模式：上一张/下一张切换，表单状态按照片 id 缓存（切图不丢输入）
  * 后端：biz_delivery_item 反馈四件套 feedback_content / feedback_types / feedback_priority（feedback_status）
- * 提交 → submitFeedback（/delivery/feedback，路径联调核对）
+ * 提交 → submitFeedback（POST /delivery/feedback/:item_id，:item_id = 交付明细 ID）
+ * 明细来源：/delivery/items/:id 的 :id 是 **order_id**；本页只取 kind=3（精修成品）作为反馈对象
  * 稿内优先级默认选中「重要」为视觉示例，产品默认应为「一般」，此处按产品口径
  */
 import { getDeliveryItems, submitFeedback } from '@/api/delivery'
@@ -138,34 +139,31 @@ export default {
     },
   },
   onLoad(query) {
-    this.orderId = query.deliveryId || query.id
+    /* /delivery/items/:id 的 :id 是 order_id（与 /delivery/detail 同语义） */
+    this.orderId = query.orderId || query.id
     this.fetchData()
   },
   methods: {
     async fetchData() {
       try {
         const res = await getDeliveryItems(this.orderId)
-        const list = Array.isArray(res) ? res : (res && res.data) || []
-        /* 仅精修中的样片参与逐张反馈（kind=2 已选 → 精修对象），字段联调核对 */
-        this.items = list.map((it, i) => ({
-          id: it.id,
-          no: it.code || `#${String(i + 1).padStart(3, '0')}`,
-          url: it.url || it.file_url,
-          fb_content: it.feedback_content || '',
-          fb_types: it.feedback_types ? String(it.feedback_types).split(',') : [],
-          fb_priority: it.feedback_priority || 'normal',
-        }))
+        const list = Array.isArray(res) ? res : (res && res.list) || []
+        /* 仅精修成品（kind=3）参与逐张反馈 */
+        this.items = list
+          .filter((it) => Number(it.kind) === 3)
+          .map((it, i) => ({
+            id: it.id,
+            no: it.filename || `#${String(i + 1).padStart(3, '0')}`,
+            url: it.url || '',
+            fb_content: it.feedback_content || '',
+            fb_types: it.feedback_types ? String(it.feedback_types).split(',') : [],
+            fb_priority: it.feedback_priority || 'normal',
+          }))
       } catch (e) {
-        /* 联调后移除：演示 5 张（复现稿面「已反馈 3/5」） */
-        this.items = Array.from({ length: 5 }, (_, i) => ({
-          id: i + 1,
-          no: `#0${38 + i}`,
-          url: '',
-          fb_content: i < 3 ? '示例反馈' : '',
-          fb_types: [],
-          fb_priority: 'normal',
-        }))
+        /* request 层已 toast；不注入演示照片 */
+        this.items = []
       }
+      this.cursor = 0
       this.loadForm()
     },
     /** 切换照片：先把编辑态写回当前张，再载入目标张 */

@@ -58,13 +58,14 @@
 <script>
 /**
  * C18 改期/取消（画板 1:1915 一比一还原）
- * 改期政策三行 = biz_studio_setting 参数化（reschedule_free_hours=72 / fee_rate=20 / min_hours=24），
- * 金额示例 ¥536 = 套餐总额 2680×20%（后端算好下发，前端不计算——演示值联调后移除）
+ * 改期政策三行 = biz_studio_setting 参数化（reschedule_free_hours / reschedule_fee_rate / reschedule_min_hours），
+ * 调度费预览 = 订单总额 × 费率（与后端改期计费同源；最终以后端返回为准）
  * 跳转：申请改期 → C19 选择新日期；取消订单 → C20 取消订单
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
+import { getStudioInfo } from '@/api/studio'
 
 export default {
   components: { AppNavBar, AppButton },
@@ -72,22 +73,26 @@ export default {
     return {
       orderId: 0,
       order: {},
-      resFreeHours: 72, // biz_studio_setting.reschedule_free_hours
-      resFeeRate: 20,   // biz_studio_setting.reschedule_fee_rate
-      resMinHours: 24,  // biz_studio_setting.reschedule_min_hours
-      feeDemo: 536,     // 演示：2680×20%（联调后改读后端 fee 字段）
+      resFreeHours: 0, // biz_studio_setting.reschedule_free_hours
+      resFeeRate: 0,   // biz_studio_setting.reschedule_fee_rate
+      resMinHours: 0,  // biz_studio_setting.reschedule_min_hours
     }
   },
   computed: {
+    /** 调度费预览：订单总额 × 费率（费率未配置时为 0） */
+    feeDemo() {
+      const base = Number(this.order.total_amt || this.order.base_price || 0)
+      return Math.round(base * this.resFeeRate / 100)
+    },
     orderTitle() {
       const o = this.order
-      if (!o || !o.id) return '家庭纪念写真 · ¥2,680'
+      if (!o || !o.id) return '—'
       return `${o.package_name || '拍摄服务'} · ¥${Number(o.total_amt || o.base_price || 0).toLocaleString()}`
     },
     orderMeta() {
       const o = this.order
-      if (!o || !o.id) return '8月8日 10:00 · 越秀公园'
-      return [o.shoot_date, o.shoot_time, o.shoot_address].filter(Boolean).join(' · ')
+      if (!o || !o.id) return '—'
+      return [o.shoot_date, o.shoot_time, o.shoot_address].filter(Boolean).join(' · ') || '—'
     },
   },
   onLoad(query) {
@@ -97,10 +102,17 @@ export default {
   methods: {
     async loadData() {
       if (!this.orderId) return
-      try {
-        const res = await getOrderDetail(this.orderId)
-        this.order = (res && res.data && res.data.order) || (res && res.data) || {}
-      } catch (e) { /* 演示兜底 */ }
+      /* 改期规则来自工作室设置（公开接口，按 slug 定位租户） */
+      getStudioInfo()
+        .then((s) => {
+          const cfg = s || {}
+          this.resFreeHours = Number(cfg.reschedule_free_hours || 0)
+          this.resFeeRate = Number(cfg.reschedule_fee_rate || 0)
+          this.resMinHours = Number(cfg.reschedule_min_hours || 0)
+        })
+        .catch(() => {})
+      const res = await getOrderDetail(this.orderId).catch(() => null)
+      this.order = (res && res.order) || {}
     },
     goReschedule() {
       uni.navigateTo({ url: `/pages/reschedule/date?orderId=${this.orderId}` })

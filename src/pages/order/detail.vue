@@ -237,14 +237,12 @@ export default {
       order: {},
       reschedule: null,
       refund: null,
+      loading: false,
     }
   },
   computed: {
     /** 视图模式：normal 正常 / reschedule 改期处理中 / refund 退款处理中（C09-2 三变体） */
     mode() {
-      /* 联调后移除：?demo=reschedule|refund 便于评审三态 */
-      const demo = this.$root.$mp ? this.$root.$mp.query : {}
-      if (demo === 'reschedule' || demo === 'refund') return demo
       if (this.order.status === 7) return 'refund'
       return this.reschedule && this.reschedule.status === 1 ? 'reschedule' : 'normal'
     },
@@ -267,17 +265,21 @@ export default {
       return { ...conf, actions }
     },
     rescheduleRows() {
+      /* model.OrderReschedule：original_date/original_time、new_date/new_time、fee_type/fee_amount */
       const r = this.reschedule || {}
+      const orig = [r.original_date, r.original_time].filter(Boolean).join(' ')
+      const next = [r.new_date, r.new_time].filter(Boolean).join(' ')
+      const feeAmount = Number(r.fee_amount || 0)
       return [
-        { label: '原日期', value: r.old_time || `${r.old_shoot_date || ''} ${r.old_shoot_time || ''}` },
-        { label: '新日期', value: r.new_time || `${r.new_shoot_date || ''} ${r.new_shoot_time || ''}` },
-        { label: '改期费用', value: FEE_TYPE[r.fee_type] || '免费' },
+        { label: '原日期', value: orig || '—' },
+        { label: '新日期', value: next || '—' },
+        { label: '改期费用', value: feeAmount > 0 ? `¥${feeAmount.toLocaleString()}` : FEE_TYPE[r.fee_type] || '免费' },
       ]
     },
     refundSteps() {
       const current = this.refund
         ? REFUND_CURRENT_BY_STATUS[this.refund.status] || 1
-        : 3 /* 演示态对齐稿件 */
+        : 1
       return REFUND_STEPS.map((s, i) => ({
         ...s,
         state: i + 1 < current ? 'done' : i + 1 === current ? 'current' : 'future',
@@ -293,7 +295,6 @@ export default {
   },
   onLoad(query) {
     this.orderId = query.id
-    this.demoMode = query.demo || ''
     this.fetchDetail()
   },
   methods: {
@@ -305,25 +306,22 @@ export default {
       return 'future'
     },
     async fetchDetail() {
+      this.loading = true
       try {
-        const res = await getOrderDetail(this.orderId)
-        const data = (res && res.data) || {}
-        this.order = data.order || data
-        /* 改期/退款单由后端聚合返回（字段名联调核对） */
-        this.reschedule = data.reschedule || null
-        this.refund = data.refund || null
+        /* 后端 /order/detail/:id 返回 ClientOrderDetail：
+           { order, payments, refunds, logs, delivery, reschedules, addons, review }（rpc 已解包 data） */
+        const data = (await getOrderDetail(this.orderId)) || {}
+        this.order = data.order || {}
+        /* 明细均为数组，页内只取最近一条展示改期/退款变体 */
+        this.reschedule = (data.reschedules && data.reschedules[0]) || null
+        this.refund = (data.refunds && data.refunds[0]) || null
       } catch (e) {
-        /* 接口未联调：降级为 C09-2 主稿演示数据（拍摄准备中态），联调后移除 */
-        this.order = {
-          code: 'S20260729018', package_name: '家庭纪念写真',
-          shoot_date: '8月8日 周六', shoot_time: '10:00 - 12:30', shoot_address: '越秀公园',
-          photographer: '路先生', total_amt: 2680, deposit_amt: 804, final_amt: 1876,
-          refund_amt: 804, status: 2, payment_status: 2,
-        }
-        this.reschedule = {
-          old_time: '8月8日 10:00-12:30', new_time: '8月19日 10:00-12:30', fee_type: 1,
-        }
-        this.refund = { status: 2 }
+        /* request 层已 toast；保持空订单，不注入演示数据 */
+        this.order = {}
+        this.reschedule = null
+        this.refund = null
+      } finally {
+        this.loading = false
       }
     },
     goHome() {
@@ -333,14 +331,13 @@ export default {
       })
     },
     goPayDeposit() {
-      uni.navigateTo({ url: `/pages/pay/deposit?order_id=${this.order.id || this.orderId}` })
+      uni.navigateTo({ url: `/pages/pay/deposit?orderId=${this.order.id || this.orderId}` })
     },
     goReschedule() {
-      uni.navigateTo({ url: `/pages/reschedule/apply?order_id=${this.order.id || this.orderId}` })
+      uni.navigateTo({ url: `/pages/reschedule/apply?orderId=${this.order.id || this.orderId}` })
     },
     goPrep() {
-      /* 拍前准备页（C11）尚未还原，先提示 */
-      uni.showToast({ title: '拍前准备页开发中', icon: 'none' })
+      uni.navigateTo({ url: `/pages/order/prep?orderId=${this.order.id || this.orderId}` })
     },
     contactPhotographer() {
       /* 摄影师联系方式联调后从订单/门店数据取（biz_store 联系电话） */

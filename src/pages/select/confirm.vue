@@ -90,12 +90,15 @@
 /**
  * C15 确认成片（画板 1:1191）
  * 数据源：biz_delivery（stage 4-待确认交付）+ biz_delivery_item（kind=3 精修成品）
- * 金额纪律：待付尾款 = 后端 final_amt（加选差价已自动并入，口径③：差价无单独确认环节）
+ *        套餐口径（张数/单价/修改次数）取 biz_package；金额取 biz_order 快照
+ * 金额纪律：待付尾款 = 后端 order.final_amt（加选差价已自动并入，口径③：差价无单独确认环节）
  *   前端费用明细仅展示拆解（final_amt = 尾款基数 + extra_fee），不做加法决策
- * 确认 → confirmDelivery（/delivery/confirm 已确认路由）→ 跳 C16 支付尾款
- * 「申请最后修改」次数：需求文档口径 2 次，稿面演示「已使用1/2」；后端字段联调核对
+ * 确认 → confirmDelivery（/delivery/confirm/:delivery_id）→ 跳 C16 支付尾款
+ * 「申请最后修改」次数：quota 取 pkg.revision_count，已用取 delivery.retouch_version - 1（精修轮次）
  */
 import { getDeliveryDetail, getDeliveryItems, confirmDelivery } from '@/api/delivery'
+import { getOrderDetail } from '@/api/order'
+import { getPackageDetail } from '@/api/package'
 import { formatAmount } from '@/utils/format'
 
 export default {
@@ -103,15 +106,15 @@ export default {
     return {
       orderId: null,
       deliveryId: null,
-      versionLabel: '最终成片 V2',
-      quota: 20,
-      extraUnit: 60,
-      extraCount: 4,       // biz_delivery.extra_selected_count（演示口径对齐 C15 稿面「加选 4 张」）
-      extraFee: 240,       // biz_delivery.extra_fee（后端算好；稿面 4×¥60）
-      finalDue: 2116,      // biz_order.final_amt（尾款 1876 + 差价 240，稿面演示口径）
-      depositAmt: 804,
-      reviseUsed: 1,
-      reviseQuota: 2,
+      versionLabel: '',
+      quota: 0,            // biz_package.photos_included
+      extraUnit: 0,        // biz_package.addon_unit_price
+      extraCount: 0,       // biz_delivery.extra_selected_count
+      extraFee: 0,         // biz_delivery.extra_fee
+      finalDue: 0,         // biz_order.final_amt
+      depositAmt: 0,       // biz_order.deposit_amt
+      reviseUsed: 0,       // 已用修改次数（delivery.retouch_version - 1）
+      reviseQuota: 0,      // biz_package.revision_count
       items: [],
       submitting: false,
     }
@@ -136,17 +139,36 @@ export default {
         const detail = await getDeliveryDetail(this.orderId)
         const d = (detail && detail.delivery) || null
         this.deliveryId = d && d.id
-        this.quota = Number((d && d.package_quota) || 20)
-        this.extraCount = Number((d && d.extra_selected_count) || 0)
-        this.extraFee = Number((d && d.extra_fee) || 0)
-        this.finalDue = Number((d && d.final_amt) || this.finalDue)
-        this.depositAmt = Number((d && d.deposit_amt) || this.depositAmt)
+        if (d) {
+          this.extraCount = Number(d.extra_selected_count || 0)
+          this.extraFee = Number(d.extra_fee || 0)
+          const ver = Number(d.retouch_version || 1)
+          this.versionLabel = `最终成片 V${ver}`
+          this.reviseUsed = Math.max(0, ver - 1)
+        }
+        /* 订单快照：尾款 / 定金 / 套餐 ID */
+        const orderRes = await getOrderDetail(this.orderId).catch(() => null)
+        const order = (orderRes && orderRes.order) || {}
+        this.finalDue = Number(order.final_amt || 0)
+        this.depositAmt = Number(order.deposit_amt || 0)
+        /* 套餐口径：包含精修张数 / 加片单价 / 修改次数 */
+        if (order.package_id) {
+          const pkg = await getPackageDetail(order.package_id).catch(() => null)
+          if (pkg) {
+            this.quota = Number(pkg.photos_included || 0)
+            this.extraUnit = Number(pkg.addon_unit_price || 0)
+            this.reviseQuota = Number(pkg.revision_count || 0)
+          }
+        }
         const res = await getDeliveryItems(this.orderId)
-        const list = Array.isArray(res) ? res : (res && res.data) || []
-        this.items = list.map((it) => ({ id: it.id, url: it.url || it.file_url }))
+        const list = Array.isArray(res) ? res : (res && res.list) || []
+        /* 成片网格只含精修成品（kind=3） */
+        this.items = list
+          .filter((it) => Number(it.kind) === 3)
+          .map((it) => ({ id: it.id, url: it.url || '' }))
       } catch (e) {
-        /* 联调后移除：演示 24 张（稿面口径），金额用统一数据口径 */
-        this.items = Array.from({ length: 24 }, (_, i) => ({ id: i + 1, url: '' }))
+        /* request 层已 toast；不注入演示成片 */
+        this.items = []
       }
     },
     preview(index) {

@@ -76,9 +76,10 @@
 /**
  * C20 取消订单（画板 1:2359 一比一还原）
  * 退款测算（红线⑤：退款基数 = 已付金额，非订单总额）：
- *   比例按距拍摄时长档位（72h+ 全额 / 48-72h 80% / 24-48h 50% / <24h 不退）
+ *   比例按距拍摄时长档位 —— 与后端 domain.RefundRatio 固定档位一一对应
+ *   （>=72h 全额 / >=48h 80% / >=24h 50% / <24h 不退；非 studio_setting 可配项）
  *   refund_amt 由后端按 biz_order_refund 规则计算下发，前端金额仅展示预览
- * 提交 → applyCancel（/order/cancel）→ 跳退款进度 C21
+ * 提交 → applyCancel（/order/cancel/:id）→ 跳退款进度 C21
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -96,31 +97,36 @@ export default {
       REASONS,
       orderId: 0,
       order: {},
-      paidAmt: 804,       // 已付金额（biz_order.paid_amt，基数=已付非总额）
-      hoursLeft: 96,      // 距拍摄小时（联调后由 shoot_date 计算）
-      cancelFreeHours: 72,
+      paidAmt: 0,          // 已付金额（biz_order.paid_amt，基数=已付非总额）
+      hoursLeft: null,     // 距拍摄小时（由 order.shoot_date + shoot_time 计算）
       reason: '时间冲突',
       submitting: false,
     }
   },
   computed: {
     ratio() {
-      if (this.hoursLeft > this.cancelFreeHours) return 1
-      if (this.hoursLeft > 48) return 0.8
-      if (this.hoursLeft > 24) return 0.5
+      const h = this.hoursLeft
+      if (h == null) return null /* 未知：尚在加载，不预设档位 */
+      if (h > 72) return 1
+      if (h > 48) return 0.8
+      if (h > 24) return 0.5
       return 0
     },
     ratioText() {
+      if (this.ratio == null) return '—'
       if (this.ratio === 1) return '全额退款'
       if (this.ratio === 0) return '不退款'
       return `退 ${this.ratio * 100}%`
     },
     refundAmt() {
+      if (this.ratio == null) return 0
       return Math.round(this.paidAmt * this.ratio)
     },
     hoursLeftText() {
-      if (this.hoursLeft > this.cancelFreeHours) return `${this.cancelFreeHours}小时以上`
-      if (this.hoursLeft > 24) return `${Math.round(this.hoursLeft)}小时`
+      const h = this.hoursLeft
+      if (h == null) return '—'
+      if (h > 72) return '72小时以上'
+      if (h > 24) return `${Math.round(h)}小时`
       return '24小时内'
     },
   },
@@ -132,16 +138,16 @@ export default {
     formatAmount,
     async loadData() {
       if (!this.orderId) return
-      try {
-        const res = await getOrderDetail(this.orderId)
-        const o = (res && res.data && res.data.order) || (res && res.data) || {}
-        this.order = o
-        this.paidAmt = Number(o.paid_amt || o.deposit_amt || 0) || this.paidAmt
-        if (o.shoot_date) {
-          const dt = new Date(`${o.shoot_date} ${o.shoot_time || '10:00'}`.replace(/-/g, '/'))
-          this.hoursLeft = Math.round((dt - new Date()) / 3600000)
+      const res = await getOrderDetail(this.orderId).catch(() => null)
+      const o = (res && res.order) || {}
+      this.order = o
+      this.paidAmt = Number(o.paid_amt || 0)
+      if (o.shoot_date) {
+        const dt = new Date(`${o.shoot_date} ${o.shoot_time || '10:00'}`.replace(/-/g, '/'))
+        if (!Number.isNaN(dt.getTime())) {
+          this.hoursLeft = Math.round((dt - Date.now()) / 3600000)
         }
-      } catch (e) { /* 演示兜底 */ }
+      }
     },
     async onCancel() {
       if (this.ratio === 0) {

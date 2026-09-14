@@ -62,7 +62,7 @@
       </view>
       <view class="page-rd__row">
         <text class="page-rd__row-label">改期费用</text>
-        <text class="page-rd__row-val">{{ fee > 0 ? formatAmount(fee) : '免费' }}</text>
+        <text class="page-rd__row-val">{{ feeText }}</text>
       </view>
     </view>
 
@@ -91,6 +91,8 @@ import AppButton from '@/components/AppButton.vue'
 import AppCalendar from '@/components/AppCalendar.vue'
 import { getOrderDetail } from '@/api/order'
 import { applyReschedule } from '@/api/reschedule'
+import { getAvailableSlots } from '@/api/slot'
+import { getStudioInfo } from '@/api/studio'
 import { formatAmount } from '@/utils/format'
 
 export default {
@@ -101,48 +103,55 @@ export default {
       order: {},
       year: 2026,
       month: 8,
-      resFreeHours: 72,
-      resFeeRate: 20,
-      resMinHours: 24,
-      hoursLeft: 36, // 距拍摄小时数（联调改读后端计算字段；演示对齐 B2 稿「距拍摄 36 小时」）
-      currentDateKey: '2026-08-08', // 原预约日期（不可选）
-      marks: {
-        /* 演示（联调后移除）：10/14 已约红点，18 摄影师关闭金点 */
-        '2026-08-10': { dot: 'booked' },
-        '2026-08-14': { dot: 'booked' },
-        '2026-08-18': { dot: 'blocked', disabled: true },
-      },
-      legendText: '8日为当前预约日期不可选 · 18日摄影师临时关闭（外出拍摄）',
-      slots: [
-        { label: '09:00-11:30' },
-        { label: '10:00-12:30' },
-        { label: '14:00-16:30' },
-        { label: '15:00-17:30', disabled: true },
-      ],
-      form: { date: '2026-08-19', slot: '10:00-12:30' },
-      originalText: '8月8日 10:00-12:30',
+      resFreeHours: 0,   // biz_studio_setting.reschedule_free_hours（免费改期剩余小时阈值）
+      resFeeRate: 0,     // biz_studio_setting.reschedule_fee_rate（调度费率 %）
+      resMinHours: 0,    // biz_studio_setting.reschedule_min_hours（不足该小时数不可改期）
+      hoursLeft: null,   // 距拍摄小时数（由 order.shoot_date/shoot_time 实时计算）
+      currentDateKey: '', // 原预约日期（日历中标记为「当前」，不可选）
+      /* 后端无「整月可约标记」接口（slot/list 仅按单日查询），故不预设任何点标记 */
+      marks: {},
+      slots: [],         // 选定日期的可约时段（slot/list 真实返回）
+      slotsLoading: false,
+      form: { date: '', slot: '' },
+      originalText: '',
       submitting: false,
     }
   },
   computed: {
-    /* 调度费基数 = 套餐总额（C19 稿：2680×20% = 536）；后端算好为准，前端仅展示 */
+    /* 调度费基数 = 订单总额（后端算好为准，前端仅展示；无订单时按 0，不臆造基数） */
     totalAmt() {
-      return Number(this.order.total_amt || this.order.base_price || 0) || 2680
+      return Number(this.order.total_amt || this.order.base_price || 0)
     },
     feeAtRate() {
       return Math.round(this.totalAmt * this.resFeeRate / 100)
     },
+    /* null = 尚未取到拍摄时间，无法判定；-1 = 已进入不可改期窗口 */
     fee() {
+      if (this.hoursLeft == null) return null
       if (this.hoursLeft > this.resFreeHours) return 0
-      if (this.hoursLeft <= this.resMinHours) return -1 /* 不可改 */
+      if (this.hoursLeft <= this.resMinHours) return -1
       return this.feeAtRate
     },
+    feeText() {
+      if (this.fee == null) return '—'
+      if (this.fee < 0) return '已不可改期'
+      return this.fee > 0 ? formatAmount(this.fee) : '免费'
+    },
     freeHoursLeft() {
+      if (this.hoursLeft == null) return 0
       return Math.max(0, Math.round(this.hoursLeft - this.resFreeHours))
+    },
+    /** 图例：按真实改期规则生成（无整月标记接口，故不描述点含义） */
+    legendText() {
+      const parts = []
+      if (this.currentDateKey) parts.push(`${this.currentDateKey} 为当前预约日期，不可选`)
+      if (this.resMinHours) parts.push(`距拍摄不足 ${this.resMinHours} 小时不可改期`)
+      if (this.resFreeHours) parts.push(`距拍摄超过 ${this.resFreeHours} 小时免费改期`)
+      return parts.join(' · ') || '请选择新的拍摄日期'
     },
     newText() {
       if (!this.form.date) return '请选择新日期'
-      const [y, m, d] = this.form.date.split('-')
+      const [, m, d] = this.form.date.split('-')
       return `${Number(m)}月${Number(d)}日 ${this.form.slot || ''}`.trim()
     },
   },
@@ -157,21 +166,48 @@ export default {
     formatAmount,
     async loadData() {
       if (!this.orderId) return
+      /* 改期规则来自工作室设置（公开接口，按 slug 定位租户） */
+      getStudioInfo()
+        .then((s) => {
+          const cfg = s || {}
+          this.resFreeHours = Number(cfg.reschedule_free_hours || 0)
+          this.resFeeRate = Number(cfg.reschedule_fee_rate || 0)
+          this.resMinHours = Number(cfg.reschedule_min_hours || 0)
+        })
+        .catch(() => {})
+      const res = await getOrderDetail(this.orderId).catch(() => null)
+      const o = (res && res.order) || {}
+      this.order = o
+      /* 原日期 + 距拍摄小时数均由订单快照计算（后端无现成剩余小时字段） */
+      if (o.shoot_date) {
+        const dt = new Date(`${o.shoot_date} ${o.shoot_time || '10:00'}`.replace(/-/g, '/'))
+        this.hoursLeft = Math.round((dt - new Date()) / 3600000)
+        this.currentDateKey = o.shoot_date
+        this.originalText = `${Number(o.shoot_date.split('-')[1])}月${Number(o.shoot_date.split('-')[2])}日 ${o.shoot_time || ''}`.trim()
+      }
+    },
+    /** 选定日期后拉该日真实可约时段（slot/list 按日查询） */
+    async loadSlots(date) {
+      this.slots = []
+      if (!date) return
+      this.slotsLoading = true
       try {
-        const res = await getOrderDetail(this.orderId)
-        const o = (res && res.data && res.data.order) || (res && res.data) || {}
-        this.order = o
-        /* 原日期/剩余小时：联调以 shoot_date+shoot_time 计算 */
-        if (o.shoot_date) {
-          const dt = new Date(`${o.shoot_date} ${o.shoot_time || '10:00'}`.replace(/-/g, '/'))
-          this.hoursLeft = Math.round((dt - new Date()) / 3600000)
-          this.currentDateKey = o.shoot_date
-          this.originalText = `${Number(o.shoot_date.split('-')[1])}月${Number(o.shoot_date.split('-')[2])}日 ${o.shoot_time || ''}`.trim()
-        }
-      } catch (e) { /* 演示兜底 */ }
+        const res = await getAvailableSlots({ date })
+        const list = Array.isArray(res) ? res : (res && res.list) || []
+        this.slots = list.map((s) => ({
+          label: `${s.start_time}-${s.end_time}`,
+          disabled: !s.available,
+        }))
+      } catch (e) {
+        /* request 层已 toast；保留空时段列表 */
+      } finally {
+        this.slotsLoading = false
+      }
     },
     onPickDate(key) {
       this.form.date = key
+      this.form.slot = ''
+      this.loadSlots(key)
     },
     onChangeMonth({ year, month }) {
       this.year = year

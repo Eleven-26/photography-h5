@@ -16,7 +16,7 @@
     <!-- ② 拍摄建议（C11 实测 #1D1E22 r16 内四组：图标 + 14 Bold 标题 + 13 建议行） -->
     <view class="page-prep__label"><text>拍摄建议</text></view>
     <view class="page-prep__advice">
-      <view v-for="(g, i) in ADVICES" :key="g.title" class="page-prep__advice-row" :class="{ 'page-prep__advice-row--last': i === ADVICES.length - 1 }">
+      <view v-for="(g, i) in advices" :key="g.title || i" class="page-prep__advice-row" :class="{ 'page-prep__advice-row--last': i === advices.length - 1 }">
         <!-- C11 实测建议图标 20px：gift/clock/pin/bulb（原画板矢量） -->
         <AppIcon :name="g.icon" :size="20" />
         <view class="page-prep__advice-main">
@@ -27,8 +27,9 @@
         </view>
       </view>
     </view>
+    <text v-if="!advices.length" class="page-prep__empty">摄影师尚未下发拍前准备内容</text>
 
-    <!-- ③ 毛玻璃底栏：确认已阅读 → confirmPrepRead（/order/prep/read） -->
+    <!-- ③ 毛玻璃底栏：确认已阅读 → confirmPrepRead（/order/prep/read/:id） -->
     <AppFooter>
       <AppButton block :loading="submitting" @click="onConfirmRead">确认已阅读</AppButton>
     </AppFooter>
@@ -38,9 +39,10 @@
 <script>
 /**
  * C11 拍前准备（画板 1:1041 一比一还原）
- * 数据源：订单 prep_content（upgrade_client_20260907.sql biz_order.prep_content，摄影师端编辑下发）；
- *   未配置时降级为稿面演示建议（联调后移除）
- * 交互：「确认已阅读」→ confirmPrepRead（/order/prep/read，order.js 已定义）
+ * 数据源：订单 prep_content（biz_order.prep_content，摄影师端编辑下发）
+ *   JSON 结构：{ advices: [{ icon?, title, lines: string[] }] }（亦兼容直接给数组）
+ *   未下发内容时展示空态提示，不再回落到设计稿示例文案
+ * 交互：「确认已阅读」→ confirmPrepRead（/order/prep/read/:id）
  * ⚠️ 设计注记：顶部信息卡为白卡反色（C11 实测白底黑字），与全站暗色卡不同，属设计强调手法
  */
 import AppNavBar from '@/components/AppNavBar.vue'
@@ -48,33 +50,28 @@ import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail, confirmPrepRead } from '@/api/order'
 
-const ADVICES = [
-  { icon: 'gift', title: '服装建议', lines: ['浅色系服装更上镜', '家庭成员风格统一', '建议携带1-2套备用服装'] },
-  { icon: 'clock', title: '时间建议', lines: ['提前15分钟到达集合点', '拍摄约2.5小时'] },
-  { icon: 'pin', title: '交通', lines: ['越秀公园北门', '地铁5号线小北站D出口', '步行约8分钟'] },
-  { icon: 'bulb', title: '注意事项', lines: ['可带道具：气球、花束', '自然妆容即可', '保持放松，享受拍摄'] },
-]
+/* prep_content 未带 icon 字段时的兜底图标（按序循环） */
+const DEFAULT_ICONS = ['gift', 'clock', 'pin', 'bulb']
 
 export default {
   components: { AppNavBar, AppFooter, AppButton },
   data() {
     return {
-      ADVICES,
       orderId: 0,
       order: {},
+      advices: [],
       submitting: false,
     }
   },
   computed: {
     dateText() {
-      /* 联调改读 shoot_date 展示（含周几） */
-      return this.order.shoot_date ? `${this.order.shoot_date}` : '8月8日 周六'
+      return this.order.shoot_date || '—'
     },
     timeText() {
-      return this.order.shoot_time || '10:00 - 12:30'
+      return this.order.shoot_time || '—'
     },
     addressText() {
-      return this.order.shoot_address ? `${this.order.shoot_address} · 北门集合` : '越秀公园 · 北门集合'
+      return this.order.shoot_address || '—'
     },
   },
   onLoad(query) {
@@ -84,12 +81,29 @@ export default {
   methods: {
     async loadData() {
       if (!this.orderId) return
-      try {
-        const res = await getOrderDetail(this.orderId)
-        const o = (res && res.data && res.data.order) || (res && res.data) || {}
-        this.order = o
-        /* prep_content 结构联调核对（预期 JSON：{ advices: [{title, lines}] }），为空用演示 */
-      } catch (e) { /* 演示兜底 */ }
+      const res = await getOrderDetail(this.orderId).catch(() => null)
+      const o = (res && res.order) || {}
+      this.order = o
+      this.advices = this.parseAdvices(o.prep_content)
+    },
+    /** 解析拍前准备内容（JSON 字符串/对象均可）；无法解析或为空则返回空数组 */
+    parseAdvices(raw) {
+      if (!raw) return []
+      let data = raw
+      if (typeof raw === 'string') {
+        try { data = JSON.parse(raw) } catch (e) { return [] }
+      }
+      const list = Array.isArray(data) ? data : (data && data.advices) || []
+      if (!Array.isArray(list)) return []
+      return list
+        .map((g, i) => ({
+          icon: (g && g.icon) || DEFAULT_ICONS[i % DEFAULT_ICONS.length],
+          title: (g && g.title) || '',
+          lines: Array.isArray(g && g.lines)
+            ? g.lines
+            : String((g && g.lines) || '').split('\n').filter(Boolean),
+        }))
+        .filter((g) => g.title || g.lines.length)
     },
     async onConfirmRead() {
       this.submitting = true
@@ -166,5 +180,16 @@ export default {
     gap: 4rpx;
   }
   &__advice-line { color: $text-disabled; font-size: 26rpx; line-height: 1.6; } /* C11 实测 #85878D */
+  /* 无拍前准备内容时的空态提示 */
+  &__empty {
+    display: block;
+    margin: 0 $page-pad;
+    padding: 32rpx;
+    text-align: center;
+    color: $text-3;
+    font-size: 26rpx;
+    background-color: $bg-card;
+    border-radius: 32rpx;
+  }
 }
 </style>

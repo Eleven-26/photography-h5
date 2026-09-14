@@ -9,7 +9,7 @@
 
     <!-- ① 说明头卡（C27 实测 #111216 r12 pad20：13@0.5 / 18 Bold / 12@0.5） -->
     <view class="page-cx__hero">
-      <text class="page-cx__hero-label">告诉{{ photographer }}你想要什么</text>
+      <text class="page-cx__hero-label">告诉摄影师你想要什么</text>
       <text class="page-cx__hero-title">定制拍摄方案</text>
       <text class="page-cx__hero-sub">不限套餐 · 按需报价 · 1对1沟通</text>
     </view>
@@ -82,7 +82,7 @@
     <!-- ⑧ 提示卡（C27 实测 #1D1E22） -->
     <view class="page-cx__tip">
       <AppIcon name="info-sm" :size="13" />
-      <text class="page-cx__tip-text">提交后{{ photographer }}将在24小时内给你一份定制报价方案。你可以与摄影师在线沟通确认细节后再支付定金。</text>
+      <text class="page-cx__tip-text">提交后摄影师将在24小时内给你一份定制报价方案。你可以与摄影师在线沟通确认细节后再支付定金。</text>
     </view>
 
     <!-- ⑨ 毛玻璃底栏：block 白胶囊（C27 实测） -->
@@ -97,7 +97,9 @@
  * C27 定制需求（画板 1:1387 一比一还原）
  * 业务口径②：定制需求一律走报价（custom_request → 线索 → 报价），不走快捷直约
  * 数据源：biz_custom_request（type/date/address/budget/detail/ref_images）→ submitCustomRequest
- * 预算/类型为稿面固定枚举；联调时如需 photographers 端可配置再改接口驱动
+ * 预算/类型为稿面固定枚举；联调时如需 photographers 端可配置再改接口驱动。
+ * ⚠️ 摄影师姓名后端未下发（studio/info 无该字段、package 亦无），页内不再写死姓名，
+ *    文案统一用「摄影师」泛称。
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -113,7 +115,6 @@ export default {
     return {
       TYPES,
       BUDGETS,
-      photographer: '路先生',
       form: {
         type: '家庭纪念',
         date: '',

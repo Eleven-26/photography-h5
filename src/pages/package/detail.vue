@@ -161,7 +161,6 @@
 import { getPackageDetail } from '@/api/package'
 import { getStudioInfo } from '@/api/studio'
 import { formatAmount } from '@/utils/format'
-import { allowPlaceholder } from '@/utils/demo'
 import AppSection from '@/components/AppSection.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -257,23 +256,8 @@ export default {
         const res = await getPackageDetail(id)
         this.pkg = res || {}
       } catch {
-        // request 层已 toast 后端文案（如「套餐不存在」）→ 落空态，不再冒充成演示套餐
+        // request 层已 toast 后端文案（如「套餐不存在」）→ 落空态，不冒充成演示套餐
         this.notFound = true
-      }
-      this.applyPlaceholder()
-    },
-    /**
-     * 占位兜底：**仅 VITE_ALLOW_DEMO=true 时**生效（见 utils/demo.js）。
-     * ⚠️ 绝不伪造 id —— 原来会把 id 兜成字符串 'demo-p2'，点「选择日期」带着它请求真接口，
-     * 后端路径参数解析失败直接 400。这正是"点套餐详情报错"的成因之一。
-     */
-    applyPlaceholder() {
-      if (!allowPlaceholder() || this.pkg.id) return
-      this.pkg = {
-        ...this.pkg,
-        name: this.pkg.name || '全套精修套餐',
-        base_price: this.pkg.base_price || 2680,
-        cover: this.pkg.cover || '/static/img/pkg-2.jpg',
       }
     },
     /** 改期政策：阈值展示口径与后端 domain.ReschedulePolicy 一致 */

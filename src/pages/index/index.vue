@@ -27,23 +27,21 @@
           <AppIcon name="share-white" :size="20" />
         </view>
       </view>
-      <!-- 工作室信息（biz_studio_setting：名称/口号/评分/服务次数/经验） -->
+      <!-- 工作室信息（数据源 /h5/studio/info → model.StudioSetting）
+           ⚠️ StudioSetting 只有 slogan / intro / faq / service_flow 等字段：
+           店名在 sys_company.name、封面/评分/服务次数/经验年限后端均未下发 —— 一律不渲染。
+           此前模板写死的「本鸡比摄影 / 4.9 / 326 次服务 / 8 年经验」是编造值，已移除。
+           若要恢复该区完整视觉，需后端在 studio/info 聚合返回上述字段。 -->
       <view class="home__hero-info">
-        <text class="home__hero-title">{{ studio.name || '本鸡比摄影' }}</text>
-        <text class="home__hero-slogan">{{ studio.slogan || '用光影记录值得珍藏的瞬间' }}</text>
-        <view class="home__hero-meta">
-          <view class="home__hero-rate">
-            <AppIcon name="star-gold" :size="13" />
-            <text class="home__hero-score">{{ studio.rating || '4.9' }}</text>
-          </view>
-          <text class="home__hero-sub">{{ studio.served_count || 326 }}次服务</text>
-          <text class="home__hero-sub">{{ studio.years_of_exp || 8 }}年经验</text>
-        </view>
+        <text v-if="studio.slogan" class="home__hero-title">{{ studio.slogan }}</text>
+        <text v-if="studio.intro" class="home__hero-slogan">{{ studio.intro }}</text>
       </view>
     </view>
 
-    <!-- ② 数据统计卡：三列 + 竖分割线（数字 20 Bold / 标签 12 次级） -->
-    <view class="home__stats-wrap">
+    <!-- ② 数据统计卡：三列 + 竖分割线（数字 20 Bold / 标签 12 次级）
+         ⚠️ 三项均无后端数据源（StudioSetting 无 works_count / served_count / positive_rate），
+         全为空时隐藏整块，不再用写死的 100+ / 326 / 98% 顶上 -->
+    <view v-if="stats.works || stats.clients || stats.rate" class="home__stats-wrap">
       <view class="card home__stats">
         <view class="home__stat">
           <text class="home__stat-num">{{ stats.works }}</text>
@@ -152,8 +150,8 @@
  */
 import { getStudioInfo } from '@/api/studio'
 import { getPackages } from '@/api/package'
+import { getAssets } from '@/api/asset'
 import { PACKAGE_STATUS } from '@/constants/enums'
-import { allowPlaceholder } from '@/utils/demo'
 import { formatAmount as formatPrice } from '@/utils/format'
 import AppSection from '@/components/AppSection.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -161,23 +159,20 @@ import AppButton from '@/components/AppButton.vue'
 import AppWorkGrid from '@/components/AppWorkGrid.vue'
 import AppEmpty from '@/components/AppEmpty.vue'
 
-/* ============================================================
- * 演示兜底数据（2026-09-07 从画板 C01 导出原图，static/img/）
- * 用途：后端未联调时保证页面视觉与设计稿一致；联调后整体移除
- * ============================================================ */
-const DEMO_STUDIO = {
-  name: '本鸡比摄影',
-  slogan: '用光影记录值得珍藏的瞬间',
-  rating: '4.9',
-  served_count: 326,
-  years_of_exp: 8,
-  cover_url: '/static/img/hero.jpg', // 画板 1:59 studio-space
+/** 解析后端 JSON 数组字符串（biz_studio_setting.faq / service_flow）；空值或非法返回 [] */
+function parseList(raw) {
+  if (!raw) return []
+  try {
+    const v = typeof raw === 'string' ? JSON.parse(raw) : raw
+    return Array.isArray(v) ? v : []
+  } catch (e) {
+    return []
+  }
 }
-const DEMO_PACKAGES = [
-  { id: 'demo-p1', name: '轻写真套餐', shoot_hours: 1.5, photos_included: 20, base_price: 1680, cover: '/static/img/pkg-1.jpg', status: PACKAGE_STATUS.ACTIVE },
-  { id: 'demo-p2', name: '全套精修套餐', shoot_hours: 2.5, photos_included: 20, base_price: 2680, cover: '/static/img/pkg-2.jpg', status: PACKAGE_STATUS.ACTIVE },
-]
-const DEMO_WORKS = [1, 2, 3, 4, 5, 6].map((n) => ({ id: `demo-w${n}`, cover_url: `/static/img/work-${n}.jpg` }))
+
+/** 服务流程兜底：设计稿 C01 的通用步骤文案（纯 UI 文案、非业务数据）；
+    后端 studio.service_flow 有值时以后端为准 */
+const DEFAULT_FLOW = ['浏览作品', '选择套餐', '预约档期', '拍摄', '在线选片', '精修交付', '下载成片']
 
 export default {
   components: { AppSection, AppFooter, AppButton, AppWorkGrid, AppEmpty },
@@ -186,26 +181,31 @@ export default {
       studio: {},
       featuredWorks: [],
       packages: [],
-      // 服务流程两行（C01 实测文案；图标 flow-1..7 已从画板导出）
-      flowRow1: ['浏览作品', '选择套餐', '预约档期', '拍摄'],
-      flowRow2: ['在线选片', '精修交付', '下载成片'],
-      // 常见问题（C01 实测静态文案，待接接口）
-      faqs: [
-        { q: '拍摄需要提前多久预约？', a: '建议提前3-5天预约，周末档期较紧张，建议尽早预约。' },
-        { q: '如果下雨怎么办？', a: '可免费改期，提前4小时联系即可调整。' },
-        { q: '照片多久能拿到？', a: '拍摄后7个工作日内完成精修并交付，高清下载有效期30天。' },
-      ],
     }
   },
   computed: {
-    /** 统计数据：优先取接口，缺省回退设计稿演示值（联调核对字段名） */
+    /** 统计数据：后端 StudioSetting **没有** works_count / served_count / positive_rate 字段，
+        取不到即返回空串（模板按空隐藏整区），不再用写死的 100+ / 326 / 98% 顶上 */
     stats() {
       const s = this.studio || {}
       return {
-        works: s.works_count != null ? `${s.works_count}+` : '100+',
-        clients: s.served_count != null ? String(s.served_count) : '326',
-        rate: s.positive_rate != null ? `${s.positive_rate}%` : '98%',
+        works: s.works_count != null ? `${s.works_count}+` : '',
+        clients: s.served_count != null ? String(s.served_count) : '',
+        rate: s.positive_rate != null ? `${s.positive_rate}%` : '',
       }
+    },
+    /** 服务流程：优先后端 studio.service_flow（JSON 数组），为空回退设计稿通用文案 */
+    flowRow1() {
+      const l = parseList(this.studio.service_flow)
+      return (l.length ? l : DEFAULT_FLOW).slice(0, 4)
+    },
+    flowRow2() {
+      const l = parseList(this.studio.service_flow)
+      return (l.length ? l : DEFAULT_FLOW).slice(4)
+    },
+    /** 常见问题：后端 biz_studio_setting.faq（JSON 数组字符串），无数据即空态 */
+    faqs() {
+      return parseList(this.studio.faq)
     },
   },
   onShow() {
@@ -222,9 +222,16 @@ export default {
     },
     async loadData() {
       try {
-        const [home, pkgs] = await Promise.all([getStudioInfo(), getPackages()])
-        this.studio = (home && home.studio) || {}
-        this.featuredWorks = (home && home.featured_assets) || []
+        // ⚠️ /h5/studio/info 返回的是 model.StudioSetting **本身**（后端 response.OK(c, info)），
+        // 不是 { studio, featured_assets } —— 此前读 home.studio 恒为空对象，工作室信息从未生效。
+        const [home, pkgs, works] = await Promise.all([
+          getStudioInfo(),
+          getPackages(),
+          getAssets({ featured: 1 }),
+        ])
+        this.studio = home || {}
+        /* 精选作品单独取（asset/list 带 featured=1），分页响应 {list,total,...} */
+        this.featuredWorks = (works && works.list) || []
         // 分页响应是 {list,total,page,page_size}（后端 response.PageOK），不是裸数组；
         // 只留「已上架」（status=2，口径②，见 constants/enums.js）
         this.packages = ((pkgs && pkgs.list) || []).filter(
@@ -233,18 +240,6 @@ export default {
       } catch (e) {
         // 错误已由 request 层统一 toast，此处保留已有数据不清空
       }
-      this.applyDemoIfEmpty()
-    },
-    /**
-     * 占位兜底：**仅在 VITE_ALLOW_DEMO=true 时**才用画板数据顶上（见 utils/demo.js）。
-     * 默认关闭 —— 一旦默认开启，接口的「空数据」会被伪装成「页面正常」，真实问题
-     * （分页结构 / 状态口径 / 字段名对不上）全被掩盖，本页 2026-09-14 的排查就因此被带偏。
-     */
-    applyDemoIfEmpty() {
-      if (!allowPlaceholder()) return
-      if (!this.studio.cover_url) this.studio = { ...DEMO_STUDIO, ...this.studio }
-      if (!this.packages.length) this.packages = DEMO_PACKAGES
-      if (!this.featuredWorks.length) this.featuredWorks = DEMO_WORKS
     },
     goBack() {
       // H5 直达首页时无上级页，回退失败静默
@@ -257,12 +252,7 @@ export default {
     },
     goWorks() { uni.navigateTo({ url: '/pages/works/index' }) },
     goPackage(id) {
-      // 占位数据（VITE_ALLOW_DEMO=true 时）的 id 是字符串，后端路径参数解析不了 → 直接提示，
-      // 不发这次必然 400 的请求（这正是"点套餐详情报错"的原始成因）
-      if (typeof id !== 'number') {
-        uni.showToast({ title: '演示数据，无对应套餐详情', icon: 'none' })
-        return
-      }
+      if (id == null) return
       uni.navigateTo({ url: `/pages/package/detail?id=${id}` })
     },
     goCustom() { uni.navigateTo({ url: '/pages/custom/request' }) },

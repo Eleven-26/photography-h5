@@ -37,13 +37,13 @@
 
         <!-- 选中渠道的展开区（C16 实测：紧随选中卡，位于其余方式卡之前） -->
         <template v-if="form.method === m.key">
-          <!-- 收款码卡（C16 实测：QR 160×160 r4 + 「路先生 · 微信收款码」+ 转账金额行） -->
+          <!-- 收款码卡（C16 实测：QR 160×160 r4 + 收款人 · 收款方式 + 转账金额行） -->
           <view v-if="form.method !== 'bank'" class="page-fin__qr">
             <view class="page-fin__qr-img">
               <!-- 待切图：biz_payment_method.qr_code_url；当前为占位 -->
               <text>收款码</text>
             </view>
-            <text class="page-fin__qr-name">{{ payeeName }} · {{ form.method === 'wechat' ? '微信' : '支付宝' }}收款码</text>
+            <text class="page-fin__qr-name">{{ payeeName ? `${payeeName} · ` : '' }}{{ form.method === 'wechat' ? '微信' : '支付宝' }}收款码</text>
             <view class="page-fin__qr-amount">
               <text class="page-fin__qr-amount-pre">请用{{ form.method === 'wechat' ? '微信' : '支付宝' }}扫码，转账 </text>
               <text class="page-fin__qr-amount-num">¥{{ amountText }}</text>
@@ -108,7 +108,6 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getPaymentMethods, submitPaymentMark } from '@/api/payment'
 import { getOrderDetail } from '@/api/order'
-import { DEMO_BANK } from '@/utils/demo'
 
 export default {
   components: { AppNavBar, AppButton },
@@ -127,17 +126,16 @@ export default {
     }
   },
   computed: {
-    /* final_amt 后端算好（含差价）；联调前用稿面演示口径 1876+240 */
+    /* 金额全部读后端（元值 float64）：final_amt 后端已算好（尾款基数 + 加项），不做前端兜底常量 */
     finalNum() {
-      return Number(this.order.final_amt || 0) || Number(this.order.final_due || 0) || 2116
+      return Number(this.order.final_amt || 0)
+    },
+    /* 加项金额 = model.Order.addon_amount（后端真实字段；此前读的 extra_fee / final_base_amt 均不存在） */
+    extraFee() {
+      return Number(this.order.addon_amount || 0)
     },
     finalBase() {
-      /* 尾款基数：优先后端拆解字段，联调核对字段名（final_base / final_amt-addon） */
-      const base = Number(this.order.final_base_amt || 0)
-      return base || Math.max(0, this.finalNum - this.extraFee)
-    },
-    extraFee() {
-      return Number(this.order.extra_fee || this.order.addon_amount || 0)
+      return Math.max(0, this.finalNum - this.extraFee)
     },
     amountText() { return this.finalNum.toLocaleString() },
     subText() {
@@ -145,13 +143,20 @@ export default {
         ? `尾款 ¥${this.finalBase.toLocaleString()} + 差价 ¥${this.extraFee.toLocaleString()}`
         : '成片确认后一次性结清'
     },
-    payeeName() { return this.order.photographer_name || '路先生' },
-    /* 银行卡收款信息：后端摄影师账户字段联调核对，暂用演示数据兜底（联调后移除） */
+    /* 收款人：订单摄影师（model.Order.photographer）→ 收款方式 account_name */
+    payeeName() {
+      if (this.order.photographer) return this.order.photographer
+      const m = this.methods.find((x) => x.key === this.form.method)
+      return (m && m.account_name) || ''
+    },
+    /* 银行卡收款信息：取已启用收款方式里 type=bank 那条（account_name / account_no / name）。
+       ⚠️ 后端收款方式无独立「开户行」字段，第三行展示该方式 name。 */
     bankInfo() {
+      const bank = this.methods.find((m) => m.type === 'bank')
       return {
-        holder: this.order.bank_holder || DEMO_BANK.holder,
-        card_no: this.order.bank_card_no || DEMO_BANK.card_no,
-        bank: this.order.bank_name || DEMO_BANK.bank,
+        holder: (bank && bank.account_name) || '',
+        card_no: (bank && bank.account_no) || '',
+        bank: (bank && bank.name) || '',
       }
     },
     /* 提示语按渠道区分：银行卡需传凭证，扫码渠道无需 */
@@ -172,21 +177,27 @@ export default {
           getOrderDetail(this.orderId),
           getPaymentMethods(),
         ])
-        this.order = (orderRes && orderRes.data) || {}
-        const list = (methodRes && methodRes.data && methodRes.data.list) || []
+        /* rpc 已解包 data → ClientOrderDetail{order, payments, ...}，取 .order */
+        this.order = (orderRes && orderRes.order) || {}
+        /* 收款方式：response.OK(c, list) → rpc 解包后即数组本身 */
+        const list = Array.isArray(methodRes) ? methodRes : (methodRes && methodRes.list) || []
         if (list.length) {
+          /* 字段：id / name / type / account_name / account_no / qrcode（此前读 m.code 恒为 undefined） */
           this.methods = list.map((m) => ({
-            key: m.code || String(m.id),
+            key: m.type || String(m.id),
+            type: m.type,
+            account_name: m.account_name,
+            account_no: m.account_no,
+            qrcode: m.qrcode,
             name: m.name,
-            sub: m.code === 'bank' ? '需上传转账凭证 · 摄影师确认收款（登记）' : '扫描摄影师收款码 · 无需上传凭证',
-            color: m.code === 'bank' ? '#D9A735' : m.code === 'alipay' ? '#0075FF' : '#0AC160',
-            icon: m.code === 'alipay' ? 'alipay' : m.code === 'bank' ? 'bank' : 'wechat',
+            sub: m.type === 'bank' ? '需上传转账凭证 · 摄影师确认收款（登记）' : '扫描摄影师收款码 · 无需上传凭证',
+            color: m.type === 'bank' ? '#D9A735' : m.type === 'alipay' ? '#0075FF' : '#0AC160',
+            icon: m.type === 'alipay' ? 'alipay' : m.type === 'bank' ? 'bank' : 'wechat',
             id: m.id,
           }))
         }
       } catch (e) {
-        /* ⚠️ 演示数据（对齐 C16 稿面口径：尾款1876+差价240=2116），联调后移除 */
-        this.order = { final_amt: 2116, final_base_amt: 1876, extra_fee: 240, photographer_name: '路先生' }
+        /* 保留空 order：request 层已 toast；不注入演示数据 */
       }
     },
     /** 复制银行卡号：去掉空格后写剪贴板 */

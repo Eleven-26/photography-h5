@@ -41,22 +41,11 @@ export default {
       this.loading = true
       try {
         const res = await getMyOrders({ page: 1, page_size: 20 })
-        /* 后端返回结构联调核对：ListDTO 约定 { list, total } */
-        this.orders = (res && res.data && res.data.list) || []
+        /* 后端 /order/list 走 response.PageOK → { list, total, page, page_size }（rpc 已解包 data） */
+        this.orders = (res && res.list) || []
       } catch (e) {
-        /* 接口未联调：降级演示数据（对应 C09-2 稿内样例），联调后移除 */
-        this.orders = [
-          {
-            id: 1, code: 'S20260729018', package_name: '家庭纪念写真',
-            shoot_date: '8月8日', shoot_time: '10:00-12:30',
-            total_amt: 2680, final_amt: 1876, status: 2, payment_status: 2,
-          },
-          {
-            id: 2, code: 'S20260801012', package_name: '个人形象照',
-            shoot_date: '9月2日', shoot_time: '14:00-16:00',
-            total_amt: 1680, final_amt: 1176, status: 1, payment_status: 4,
-          },
-        ]
+        /* request 层已 toast；保持空态，不注入演示订单 */
+        this.orders = []
       } finally {
         this.loading = false
       }

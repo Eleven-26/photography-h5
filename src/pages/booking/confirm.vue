@@ -84,7 +84,6 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getPackageDetail } from '@/api/package'
 import { submitBooking } from '@/api/order'
-import { isDemo, DEMO_ORDER } from '@/utils/demo'
 
 const DRAFT_KEY = 'booking_draft'
 const WEEKS = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -114,18 +113,20 @@ export default {
       return `${d.getMonth() + 1}月${d.getDate()}日 ${WEEKS[d.getDay()]}`
     },
     infoRows() {
+      /* 摄影师姓名后端未下发（biz_package / biz_studio_setting 均无该字段）→ 无值时整行不渲染 */
       return [
         { label: '拍摄人数', value: this.answers.people_count },
         { label: '拍摄风格', value: this.answers.shoot_style },
-        { label: '摄影师', value: this.pkg.photographer_name || '路先生' },
-      ]
+        { label: '摄影师', value: this.pkg.photographer || '' },
+      ].filter((r) => r.value)
     },
-    /* 金额展示：后端 DECIMAL 元；30% 前端推导（联调核对——应读后端 deposit 字段） */
+    /* 金额读 biz_package 真实字段（元值）：base_price / deposit_amt。
+       ⚠️ 此前读的 pkg.price 不存在、定金由前端推导 30% —— 两者都会算出错误金额 */
     totalNum() {
-      return Number(this.pkg.price || 0)
+      return Number(this.pkg.base_price || 0)
     },
     depositNum() {
-      return Math.round(this.totalNum * 0.3)
+      return Number(this.pkg.deposit_amt || 0)
     },
     finalNum() {
       return this.totalNum - this.depositNum
@@ -166,14 +167,6 @@ export default {
       if (this.submitting) return
       this.submitting = true
       try {
-        /* 演示模式（联调后移除）：跳过接口，直接生成演示订单进入定金支付，保证链路可预览 */
-        if (isDemo()) {
-          uni.showToast({ title: '预约已提交（演示）', icon: 'success' })
-          setTimeout(() => {
-            uni.redirectTo({ url: `/pages/pay/deposit?orderId=${DEMO_ORDER.id}` })
-          }, 600)
-          return
-        }
         /* 妆造意愿暂并 remark（B14：BookingSubmit 无 addon 字段，联调核对挂靠方式） */
         const remarkParts = [this.answers.makeup === '需要妆造' ? '需要妆造服务' : '', this.answers.remark].filter(Boolean)
         const res = await submitBooking({
@@ -187,7 +180,8 @@ export default {
         })
         try { uni.removeStorageSync(DRAFT_KEY) } catch (e) { /* 清草稿失败不阻塞 */ }
         uni.showToast({ title: '预约已提交', icon: 'success' })
-        const orderId = res && res.data && (res.data.id || res.data.order_id)
+        /* rpc 已解包 data → 后端返回 model.Order（response.OK(c, o)），直接读 .id */
+        const orderId = res && res.id
         setTimeout(() => {
           /* 锁档口径：创建订单即临时锁 20 分钟 → 直接引导支付定金（id 缺失时回订单列表兜底） */
           uni.redirectTo({ url: orderId ? `/pages/pay/deposit?orderId=${orderId}` : '/pages/order/list' })

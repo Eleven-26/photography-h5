@@ -10,7 +10,7 @@
         <AppIcon name="clock-processing" :size="72" />
         <text class="page-payr__head-title">{{ statusTitle }}</text>
         <view class="page-payr__head-sub">
-          <text class="page-payr__head-pre">你已通过{{ paidMethod }}转账 </text>
+          <text class="page-payr__head-pre">{{ paidMethod ? `你已通过${paidMethod}转账 ` : '你已转账 ' }}</text>
           <text class="page-payr__head-num">¥{{ amountText }}</text>
         </view>
         <text v-if="paidAt" class="page-payr__head-time">转账时间：{{ paidAt }}</text>
@@ -69,9 +69,8 @@
  * C08 支付状态（画板 1:1738 一比一还原）—— 定金登记结果页
  *
  * 状态：等待摄影师确认收款（登记）→ 确认后档期正式锁定（2026-09-07 锁档口径）。
- * 数据源：biz_order_payment（status: 1-待确认收款 2-已确认）+ 订单进度（biz_order_log）。
+ * 数据源：biz_order_payment（status: 1-待核验 2-已确认）+ 订单进度（biz_order_log）。
  * 时间线 5 步对齐 C08 稿：提交预约 → 摄影师确认需求 → 你已转账 → 等待确认到账 → 档期正式锁定。
- * 演示数据：接口未联调时的降级（已标注，联调后移除）。
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
@@ -83,19 +82,20 @@ export default {
   data() {
     return {
       orderId: 0,
-      payment: {}, /* 最新定金登记记录 */
+      order: {}, /* 订单主体（取摄影师姓名用，见 model.Order.photographer） */
+      payment: {}, /* 最新定金登记记录（model.OrderPayment） */
       timeline: [],
-      paidMethod: '微信',
+      paidMethod: '',
       amountNum: 0,
     }
   },
   computed: {
     statusTitle() {
-      /* payment.status: 1-待确认收款 2-已确认（enums.js 口径） */
+      /* payment.status: 1-待核验 2-已确认（enums.js 口径） */
       return Number(this.payment.status) === 2 ? '定金已确认收款' : '等待摄影师确认收款'
     },
     amountText() { return this.amountNum.toLocaleString() },
-    paidAt() { return this.payment.paid_at ? this.payment.paid_at.replace(/-/g, '/') : '' },
+    paidAt() { return this.payment.paid_at ? String(this.payment.paid_at).replace(/-/g, '/') : '' },
   },
   onLoad(query) {
     this.orderId = Number(query.orderId || 0)
@@ -103,27 +103,31 @@ export default {
   },
   methods: {
     async loadData() {
-      try {
-        const res = await getPaymentList(this.orderId)
-        const list = (res && res.data && res.data.list) || []
-        this.payment = list.find((p) => p.type === 'deposit') || list[0] || {}
-        this.amountNum = Number(this.payment.amount || 0)
-      } catch (e) {
-        /* ⚠️ 演示数据（对齐 C08 稿：微信 ¥804，8月8日 15:30），联调后移除 */
-        this.payment = { status: 1, amount: 804, paid_at: '2026-08-08 15:30', channel_name: '微信' }
-        this.amountNum = 804
-      }
-      this.paidMethod = this.payment.channel_name || this.paidMethod
+      /* 两个接口互不依赖，并行取；任一失败不影响另一侧的渲染 */
+      const [payRes, orderRes] = await Promise.all([
+        getPaymentList(this.orderId).catch(() => []),
+        getOrderDetail(this.orderId).catch(() => null),
+      ])
+      /* 后端 response.OK(c, list) 直接出数组（见 h5.go → PaymentList → response.OK），
+         不再套一层 .data.list；order/detail 出 { order, payments, ... } 结构 */
+      const list = Array.isArray(payRes) ? payRes : (payRes && payRes.list) || []
+      this.payment = list.find((p) => p.type === 'deposit') || list[0] || {}
+      this.amountNum = Number(this.payment.amount || 0)
+      this.order = (orderRes && orderRes.order) || {}
+      /* model.OrderPayment.method_name = 收款方式名称快照（无 channel_name 字段） */
+      this.paidMethod = this.payment.method_name || ''
       this.buildTimeline()
     },
     /** 时间线：done/current/future 三态（对齐 C08 稿 5 步） */
     buildTimeline() {
       const confirmed = Number(this.payment.status) === 2
+      /* 摄影师姓名取自订单快照；未指派时为「摄影师」泛称 */
+      const who = this.order.photographer || '摄影师'
       this.timeline = [
-        { title: '提交预约', sub: this.payment.created_text || '订单已创建', state: 'done' },
-        { title: '摄影师确认需求', sub: '路先生已确认', state: 'done' },
-        { title: '你已转账', sub: `${this.paidMethod} · ¥${this.amountText}`, state: 'done' },
-        { title: confirmed ? '摄影师已确认到账' : '等待摄影师确认到账', sub: confirmed ? '档期已正式锁定' : '进行中... 路先生将核对收款记录并登记', state: confirmed ? 'done' : 'current' },
+        { title: '提交预约', sub: this.order.code ? `订单 ${this.order.code}` : '订单已创建', state: 'done' },
+        { title: '摄影师确认需求', sub: `${who}已确认`, state: 'done' },
+        { title: '你已转账', sub: [this.paidMethod, `¥${this.amountText}`].filter(Boolean).join(' · '), state: 'done' },
+        { title: confirmed ? '摄影师已确认到账' : '等待摄影师确认到账', sub: confirmed ? '档期已正式锁定' : `进行中... ${who}将核对收款记录并登记`, state: confirmed ? 'done' : 'current' },
         { title: '档期正式锁定', sub: '确认后自动锁定拍摄日档期', state: confirmed ? 'done' : 'future' },
       ]
     },
@@ -131,8 +135,9 @@ export default {
       uni.reLaunch({ url: '/pages/index/index' })
     },
     contact() {
-      /* 联系摄影师：拨号（C24 同款动作）；号码联调时读订单摄影师信息 */
-      uni.makePhoneCall({ phoneNumber: this.payment.photographer_mobile || '', fail: () => {} })
+      /* 后端订单/工作室设置均不下发摄影师手机号（model.Order 无 mobile 字段），
+         不做假号码兜底，改为引导走工作室客服 */
+      uni.showToast({ title: '请通过工作室客服联系摄影师', icon: 'none' })
     },
   },
 }

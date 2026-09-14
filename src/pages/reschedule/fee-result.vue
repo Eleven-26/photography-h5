@@ -12,7 +12,7 @@
         <text class="page-rres__head-dim">你已通过微信转账 </text>
         <text class="page-rres__head-amt">¥{{ amountText }}</text>
       </view>
-      <text class="page-rres__head-time">转账时间：{{ markAt }}</text>
+      <text v-if="markAt" class="page-rres__head-time">转账时间：{{ markAt }}</text>
     </view>
 
     <!-- ② 暖棕提示（B2 实测 #C29F77@14% + 红图标） -->
@@ -68,6 +68,7 @@
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
+import { getRescheduleList } from '@/api/reschedule'
 import { formatAmount } from '@/utils/format'
 
 export default {
@@ -75,25 +76,31 @@ export default {
   data() {
     return {
       orderId: 0,
-      fee: 536,
-      markAt: '8月19日 14:20', /* 演示（联调改读 biz_order_payment.client_marked_at） */
-      applyAt: '8月19日 14:00',
-      newText: '8月19日 10:00-12:30', /* 新档期（联调改读 applyReschedule 结果） */
-      hoursFromShoot: 36,
-      photographer: '路先生',
-      confirmed: false,
+      /* 最新改期单（model.OrderReschedule：new_date / new_time / fee_amount / status） */
+      rs: {},
+      fee: 0,
     }
   },
   computed: {
     amountText() { return formatAmount(this.fee) },
+    /* 申请时间 = 改期单创建时间（TenantBase.created_at） */
+    applyAt() { return this.rs.created_at || '' },
+    /* 新档期：new_date + new_time */
+    newText() {
+      return [this.rs.new_date, this.rs.new_time].filter(Boolean).join(' ') || '待确认'
+    },
+    /* 转账时间：需按改期单关联查 biz_order_payment.client_marked_at，后端暂未聚合 → 无值即不渲染 */
+    markAt() { return '' },
+    /* status：1-待确认 2-已同意 3-已拒绝 4-已取消（enum.RescheduleStatus） */
+    confirmed() { return Number(this.rs.status) === 2 },
     steps() {
       return [
         { state: 'done', title: '申请改期', sub: this.applyAt },
-        { state: 'done', title: '选择新档期', sub: `${this.applyAt} · 距拍摄 ${this.hoursFromShoot} 小时` },
-        { state: 'done', title: '你已转账调度费', sub: `${this.markAt} · 微信 · ¥${this.amountText}` },
+        { state: 'done', title: '选择新档期', sub: this.newText },
+        { state: 'done', title: '你已转账调度费', sub: `¥${this.amountText}` },
         this.confirmed
           ? { state: 'done', title: '摄影师已确认收款', sub: '登记完成' }
-          : { state: 'current', title: '等待摄影师确认调度费收款', sub: `进行中... ${this.photographer}将核对收款记录并登记` },
+          : { state: 'current', title: '等待摄影师确认调度费收款', sub: '摄影师将核对收款记录并登记' },
         { state: 'future', title: '改期生效', sub: `确认后新档期 ${this.newText} 生效` },
       ]
     },
@@ -101,14 +108,28 @@ export default {
   onLoad(query) {
     this.orderId = Number(query.orderId || 0)
     if (query.fee) this.fee = Number(query.fee)
+    this.load()
   },
   methods: {
     formatAmount,
+    async load() {
+      if (!this.orderId) return
+      try {
+        const list = await getRescheduleList(this.orderId)
+        /* rpc 已解包 data；改期单列表不分页 → 后端直接返回数组 */
+        const arr = Array.isArray(list) ? list : (list && list.list) || []
+        this.rs = arr[0] || {}
+        if (this.rs.fee_amount != null) this.fee = Number(this.rs.fee_amount)
+      } catch (e) {
+        /* request 层已 toast；保留路由带入的 fee，不注入演示数据 */
+      }
+    },
     goBack() {
       uni.navigateBack({ delta: 1 })
     },
     contact() {
-      uni.makePhoneCall({ phoneNumber: '13800000000', fail: () => {} }) /* 联调：读 photographer_phone */
+      /* ⚠️ 摄影师联系电话后端未下发（studio/info 无该字段）→ 不用假号码发起拨号 */
+      uni.showToast({ title: '联系方式待工作室配置', icon: 'none' })
     },
   },
 }

@@ -45,11 +45,6 @@
 
       <!-- 协议提示 -->
       <text class="login__agreement">登录即代表同意《用户协议》与《隐私政策》；未注册手机号将自动创建账号</text>
-
-      <!-- 演示模式：后端未联调时跳过验证码看 UI（联调后移除） -->
-      <view class="login__demo pressable" @click="onDemo">
-        <text class="login__demo-text">演示模式进入（跳过登录）</text>
-      </view>
     </view>
   </view>
 </template>
@@ -136,11 +131,6 @@ export default {
         this.submitting = false
       }
     },
-    /** 演示模式：写入本地假 token 直接进入（后端未联调时用，联调后移除） */
-    onDemo() {
-      useUserStore().login('demo-token', { id: 0, code: 'DEMO', name: '演示客户', mobile: '' })
-      uni.reLaunch({ url: this.redirect })
-    },
   },
 }
 </script>
@@ -200,19 +190,6 @@ export default {
     font-size: $fs-xs;
     text-align: center;
     line-height: 1.7;
-  }
-  /* 演示模式入口（联调后随 onDemo 一并移除） */
-  &__demo {
-    margin-top: 48rpx;
-    display: flex;
-    justify-content: center;
-    min-height: 88rpx; /* 触摸目标 >= 44px */
-    align-items: center;
-  }
-  &__demo-text {
-    color: $text-3;
-    font-size: $fs-sm;
-    text-decoration: underline;
   }
 }
 </style>

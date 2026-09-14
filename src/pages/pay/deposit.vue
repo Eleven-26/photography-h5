@@ -43,7 +43,7 @@
               <!-- 待切图：biz_payment_method.qr_code_url；当前为占位 -->
               <text>收款码</text>
             </view>
-            <text class="page-dep__qr-name">{{ payeeName }} · {{ form.method === 'wechat' ? '微信' : '支付宝' }}收款码</text>
+            <text class="page-dep__qr-name">{{ payeeName ? `${payeeName} · ` : '' }}{{ form.method === 'wechat' ? '微信' : '支付宝' }}收款码</text>
             <view class="page-dep__qr-amount">
               <text class="page-dep__qr-amount-pre">请用{{ form.method === 'wechat' ? '微信' : '支付宝' }}扫码，转账 </text>
               <text class="page-dep__qr-amount-num">¥{{ amountText }}</text>
@@ -108,7 +108,6 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getPaymentMethods, submitPaymentMark } from '@/api/payment'
 import { getOrderDetail } from '@/api/order'
-import { isDemo, DEMO_ORDER, DEMO_BANK } from '@/utils/demo'
 
 export default {
   components: { AppNavBar, AppButton },
@@ -127,18 +126,30 @@ export default {
     }
   },
   computed: {
-    /* 金额优先读后端 deposit_amt；联调前演示推导 30%（已标注） */
+    /* 金额均读后端（元值 float64，后端无 *_cents 分字段）；定金不做前端推导 ——
+       后端 deposit_amt 为 0 时就是 0，编造 30% 会让页面看起来「有数据」而掩盖订单异常 */
     totalNum() { return Number(this.order.total_amt || this.order.base_price || 0) },
-    depositNum() { return Number(this.order.deposit_amt || 0) || Math.round(this.totalNum * 0.3) },
+    depositNum() { return Number(this.order.deposit_amt || 0) },
     amountText() { return this.depositNum.toLocaleString() },
     totalText() { return this.totalNum.toLocaleString() },
-    payeeName() { return this.order.photographer_name || '路先生' },
-    /* 银行卡收款信息：后端摄影师账户字段联调核对，暂用演示数据兜底（联调后移除） */
+    /* 收款人：优先订单摄影师（model.Order.photographer，后端真实字段），
+       回退到收款方式的 account_name。此前读的 photographer_name 后端不存在，
+       故一直显示演示常量「路先生」。 */
+    payeeName() {
+      if (this.order.photographer) return this.order.photographer
+      const m = this.methods.find((x) => x.key === this.form.method)
+      return (m && m.account_name) || ''
+    },
+    /* 银行卡收款信息：取「已启用收款方式」里 type=bank 的那条。
+       account_name → 收款人 / account_no → 卡号 / name → 第三行。
+       ⚠️ 后端收款方式**没有独立「开户行」字段**，故第三行展示该方式的 name（如「对公转账」）；
+       若要精确到支行，需后端在 biz_payment_method 增字段。 */
     bankInfo() {
+      const bank = this.methods.find((m) => m.type === 'bank')
       return {
-        holder: this.order.bank_holder || DEMO_BANK.holder,
-        card_no: this.order.bank_card_no || DEMO_BANK.card_no,
-        bank: this.order.bank_name || DEMO_BANK.bank,
+        holder: (bank && bank.account_name) || '',
+        card_no: (bank && bank.account_no) || '',
+        bank: (bank && bank.name) || '',
       }
     },
     /* 提示语按渠道区分：银行卡需传凭证，扫码渠道无需 */
@@ -154,32 +165,34 @@ export default {
   },
   methods: {
     async loadData() {
-      /* 演示模式（联调后移除）：读本地演示订单，渠道卡用默认三项 */
-      if (isDemo()) {
-        this.order = DEMO_ORDER
-        return
-      }
       try {
         const [orderRes, methodRes] = await Promise.all([
           getOrderDetail(this.orderId),
           getPaymentMethods(),
         ])
-        this.order = (orderRes && orderRes.data) || {}
-        const list = (methodRes && methodRes.data && methodRes.data.list) || []
+        /* 订单详情 = ClientOrderDetail{order, payments, refunds, logs, delivery, reschedules, addons, review}，
+           rpc 已解包 data，故取 .order（此前读 .data 永远取不到，一直被演示数据掩盖） */
+        this.order = (orderRes && orderRes.order) || {}
+        /* 收款方式：后端 response.OK(c, list) → rpc 解包后即数组本身（见 api/common/http.js → rpc） */
+        const list = Array.isArray(methodRes) ? methodRes : (methodRes && methodRes.list) || []
         if (list.length) {
-          /* 后端收款方式驱动渠道卡（icon 颜色按 key 映射，联调核对字段名） */
+          /* 后端 ClientPaymentMethodResp 字段：id / name / type / account_name / account_no / qrcode
+             type 取值 wechat|alipay|bank|cash|other —— 此前读 m.code 恒为 undefined，渠道映射一直是错的 */
           this.methods = list.map((m) => ({
-            key: m.code || String(m.id),
-            /* 渠道图标按 code 映射（wechat/alipay/bank 均有原画板 SVG） */
-            icon: m.code === 'alipay' ? 'alipay' : m.code === 'bank' ? 'bank' : 'wechat',
+            key: m.type || String(m.id),
+            type: m.type,
+            account_name: m.account_name,
+            account_no: m.account_no,
+            qrcode: m.qrcode,
+            /* 渠道图标按 type 映射（wechat/alipay/bank 均有原画板 SVG） */
+            icon: m.type === 'alipay' ? 'alipay' : m.type === 'bank' ? 'bank' : 'wechat',
             name: m.name,
-            sub: m.code === 'bank' ? '需上传转账凭证 · 摄影师确认收款（登记）' : '扫描摄影师收款码 · 无需上传凭证',
+            sub: m.type === 'bank' ? '需上传转账凭证 · 摄影师确认收款（登记）' : '扫描摄影师收款码 · 无需上传凭证',
             id: m.id,
           }))
         }
       } catch (e) {
-        /* ⚠️ 演示数据（对齐 C07 稿），联调后移除 */
-        this.order = { total_amt: 2680, deposit_amt: 804, photographer_name: '路先生' }
+        /* 失败保留空 order —— request 层已 toast；不注入演示数据（避免把接口异常伪装成页面正常） */
       }
     },
     /** 银行卡渠道：选择凭证截图 */
@@ -209,11 +222,6 @@ export default {
       }
       this.submitting = true
       try {
-        /* 演示模式（联调后移除）：跳过登记接口直接进结果页 */
-        if (isDemo()) {
-          uni.redirectTo({ url: `/pages/pay/result?orderId=${this.orderId}` })
-          return
-        }
         await submitPaymentMark({
           order_id: this.orderId,
           type: 'deposit',

@@ -61,21 +61,22 @@ export default {
       orderId: 0,
       order: {},
       startTime: null, // 拍摄开始时间（Date）
-      endTimeText: '12:30',
+      endTimeText: '—',
     }
   },
   computed: {
     metaLine1() {
-      return this.order.shoot_date ? `${this.order.shoot_date} ${this.order.shoot_time || ''}`.trim() : '8月8日 10:00 - 12:30'
+      return this.order.shoot_date ? `${this.order.shoot_date} ${this.order.shoot_time || ''}`.trim() : '—'
     },
     addressText() {
-      return this.order.shoot_address || '越秀公园'
+      return this.order.shoot_address || '—'
     },
     photographer() {
-      return this.order.photographer_name || '路先生'
+      return this.order.photographer || '摄影师'
     },
     elapsedText() {
-      if (!this.startTime) return '约1小时20分钟' /* 演示（联调后移除） */
+      /* 已拍摄时长 = now - 拍摄开始时间（订单仅存日期+时段，无打卡字段） */
+      if (!this.startTime) return '—'
       const mins = Math.max(0, Math.round((Date.now() - this.startTime.getTime()) / 60000))
       return `约${Math.floor(mins / 60)}小时${mins % 60}分钟`
     },
@@ -87,18 +88,16 @@ export default {
   methods: {
     async loadData() {
       if (!this.orderId) return
-      try {
-        const res = await getOrderDetail(this.orderId)
-        const o = (res && res.data && res.data.order) || (res && res.data) || {}
-        this.order = o
-        if (o.shoot_date && o.shoot_time) {
-          const start = new Date(`${o.shoot_date} ${String(o.shoot_time).split('-')[0].trim()}`.replace(/-/g, '/'))
-          this.startTime = start
-          /* 预计结束：时段右端（如 10:00-12:30 → 12:30） */
-          const parts = String(o.shoot_time).split('-')
-          if (parts[1]) this.endTimeText = parts[1].trim()
-        }
-      } catch (e) { /* 演示兜底 */ }
+      const res = await getOrderDetail(this.orderId).catch(() => null)
+      const o = (res && res.order) || {}
+      this.order = o
+      if (o.shoot_date && o.shoot_time) {
+        const start = new Date(`${o.shoot_date} ${String(o.shoot_time).split('-')[0].trim()}`.replace(/-/g, '/'))
+        this.startTime = Number.isNaN(start.getTime()) ? null : start
+        /* 预计结束：时段右端（如 10:00-12:30 → 12:30） */
+        const parts = String(o.shoot_time).split('-')
+        if (parts[1]) this.endTimeText = parts[1].trim()
+      }
     },
     goBack() {
       uni.navigateBack({ delta: 1 })

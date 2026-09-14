@@ -97,7 +97,7 @@
       <view class="page-rp__done-actions">
         <AppButton block @click="goHome">返回首页</AppButton>
         <view class="page-rp__works pressable" @click="goWorks">
-          <text>看看路先生的其他作品</text>
+          <text>看看摄影师的其他作品</text>
         </view>
       </view>
     </template>
@@ -107,16 +107,16 @@
 <script>
 /**
  * C21 退款进度（画板 1:2434 处理中 / 1:2509 完成两态）
- * 数据源：getRefundList（biz_order_refund）→ status 驱动两态：
- *   status 1-2 处理中（时间线：申请/确认/处理中/到账 future）→ 3-已退款（完成态）
- * 退款纪律：线下转账退回，客户自行核对到账；「摄影师已确认退款到账」由双方确认（confirmRefundReceived 摄影师侧）
+ * 数据源：getRefundList（biz_order_refund，裸数组）→ status 驱动两态：
+ *   1-申请中 / 2-已通过 → 处理中态（时间线按节点点亮）；3-已退款 → 完成态
+ * 退款纪律：线下转账退回，客户自行核对到账；「摄影师已确认」不落单独字段，按 status 推导
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { getOrderDetail } from '@/api/order'
 import { getRefundList } from '@/api/refund'
-import { formatAmount } from '@/utils/format'
+import { formatAmount, formatDate } from '@/utils/format'
 
 export default {
   components: { AppNavBar, AppFooter, AppButton },
@@ -124,20 +124,30 @@ export default {
     return {
       orderId: 0,
       done: false,
-      refundAmt: 804,
-      orderCode: '#S20260729018',
-      applyAt: '8月6日 14:30',
-      confirmAt: '8月6日 15:10 · 路先生同意取消',
-      doneAt: '', /* 到账时间（退款完成才有） */
+      status: 0,          // 1-申请中 2-已通过 3-已退款 4-已驳回
+      refundAmt: 0,
+      orderCode: '',
+      applyAt: '',
+      confirmAt: '',
+      doneAt: '',         // 到账时间（refund_at，仅已退款才有）
     }
   },
   computed: {
     refundSteps() {
+      const s = this.status
+      /* 节点点亮：申请(≥1) → 确认(≥2) → 退款处理中(2) / 已退款(3) → 到账(3) */
+      const applied = s >= 1
+      const approved = s >= 2
+      const refunded = s === 3
       return [
-        { state: 'done', title: '取消申请已提交', sub: this.applyAt },
-        { state: 'done', title: '摄影师已确认', sub: this.confirmAt },
-        { state: 'current', title: '退款处理中', sub: '摄影师线下转账退回 · 以双方确认为准' },
-        { state: 'future', title: '退款到账', sub: '退至原微信账户' },
+        { state: applied ? 'done' : 'current', title: '取消申请已提交', sub: this.applyAt },
+        { state: approved ? 'done' : 'future', title: '摄影师已确认', sub: this.confirmAt },
+        {
+          state: refunded ? 'done' : approved ? 'current' : 'future',
+          title: refunded ? '已线下退回' : '退款处理中',
+          sub: '摄影师线下转账退回 · 以双方确认为准',
+        },
+        { state: refunded ? 'done' : 'future', title: '退款到账', sub: '退至原支付渠道' },
       ]
     },
   },
@@ -149,21 +159,21 @@ export default {
     formatAmount,
     async loadData() {
       if (!this.orderId) return
-      try {
-        const [orderRes, refundRes] = await Promise.all([
-          getOrderDetail(this.orderId),
-          getRefundList(this.orderId),
-        ])
-        const o = (orderRes && orderRes.data && orderRes.data.order) || (orderRes && orderRes.data) || {}
-        this.orderCode = o.code || this.orderCode
-        const list = (refundRes && refundRes.data && refundRes.data.list) || refundRes || []
-        const rec = list[0] || {}
-        this.refundAmt = Number(rec.refund_amt || this.refundAmt)
-        this.applyAt = rec.created_at || this.applyAt
-        /* status: 1-待确认 2-处理中 3-已退款（枚举联调核对） */
-        this.done = Number(rec.status) === 3
-        if (this.done) this.doneAt = rec.confirmed_at || ''
-      } catch (e) { /* 演示兜底 */ }
+      const [orderRes, refundRes] = await Promise.all([
+        getOrderDetail(this.orderId).catch(() => null),
+        getRefundList(this.orderId).catch(() => []),
+      ])
+      const o = (orderRes && orderRes.order) || {}
+      this.orderCode = o.code || ''
+      /* 后端 /refund/list 出裸数组（response.OK(c, list)） */
+      const list = Array.isArray(refundRes) ? refundRes : (refundRes && refundRes.list) || []
+      const rec = list[0] || {}
+      this.refundAmt = Number(rec.amount || 0)
+      this.applyAt = formatDate(rec.created_at, 'MM月dd日 HH:mm')
+      this.confirmAt = rec.audit_at ? formatDate(rec.audit_at, 'MM月dd日 HH:mm') : ''
+      this.status = Number(rec.status || 0)
+      this.done = this.status === 3
+      this.doneAt = rec.refund_at ? formatDate(rec.refund_at, 'MM月dd日 HH:mm') : ''
     },
     goOrder() {
       uni.redirectTo({ url: `/pages/order/detail?id=${this.orderId}` })

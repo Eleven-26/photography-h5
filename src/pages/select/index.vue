@@ -70,11 +70,16 @@
  * C13 在线选片（画板 1:1619）
  * 数据源：biz_delivery + biz_delivery_item（后端无独立选片表）
  *   - 勾选即选片：item.is_selected；超套餐张数 = 加选，差价由后端按单价计算写入 extra_fee
+ *   - 套餐张数/加片单价取 biz_package：photos_included（包含精修张数）+ addon_unit_price（加片单价），
+ *     与后端 ClientSelectPhotos → domain.ExtraRetouchFee 的口径一致
+ *   - 只列 kind=1（样片）明细参与勾选；已选/精修成品（kind 2/3）不进选片网格
  *   - 业务口径③：选片超时【不】自动确认，本页无倒计时压力文案
  *   - 确认提交 → submitSelect（/delivery/select 已确认路由）
  * 金额纪律：加选差价仅做「张数 × 单价」的展示预览，提交后以后端返回为准，前端不落库
  */
 import { getDeliveryDetail, getDeliveryItems, submitSelect } from '@/api/delivery'
+import { getOrderDetail } from '@/api/order'
+import { getPackageDetail } from '@/api/package'
 import { formatAmount } from '@/utils/format'
 
 export default {
@@ -82,8 +87,8 @@ export default {
     return {
       orderId: null,
       deliveryId: null,
-      quota: 20,          // 套餐精修张数（biz_delivery.package_quota，联调核对字段名）
-      extraUnit: 60,      // 加选单价（口径：¥60/张）
+      quota: 0,           // 套餐包含精修张数（biz_package.photos_included）
+      extraUnit: 0,       // 加选单价（biz_package.addon_unit_price）
       tab: 'all',
       items: [],          // { id, url, is_selected }
       selectedIds: [],    // 已勾选样片 ID（勾选即写，提交时整包上报）
@@ -91,7 +96,7 @@ export default {
     }
   },
   computed: {
-    /** 加选张数 = 超出套餐部分 */
+    /** 加选张数 = 超出套餐部分（预览值，提交时以后端 extra_selected_count 为准） */
     extraCount() {
       return Math.max(0, this.selectedIds.length - this.quota)
     },
@@ -112,15 +117,27 @@ export default {
         const detail = await getDeliveryDetail(this.orderId)
         const d = (detail && detail.delivery) || null
         this.deliveryId = d && d.id
-        if (d && d.package_quota) this.quota = Number(d.package_quota)
+        /* 套餐张数/加片单价：订单 → 套餐（biz_package），与后端计价口径同源 */
+        const orderRes = await getOrderDetail(this.orderId).catch(() => null)
+        const pkgId = orderRes && orderRes.order && orderRes.order.package_id
+        if (pkgId) {
+          const pkg = await getPackageDetail(pkgId).catch(() => null)
+          if (pkg) {
+            this.quota = Number(pkg.photos_included || 0)
+            this.extraUnit = Number(pkg.addon_unit_price || 0)
+          }
+        }
         const res = await getDeliveryItems(this.orderId)
-        const list = Array.isArray(res) ? res : (res && res.data) || []
-        this.items = list.map((it) => ({ id: it.id, url: it.url || it.file_url, is_selected: !!it.is_selected }))
+        const list = Array.isArray(res) ? res : (res && res.list) || []
+        /* 选片网格只含样片（kind=1） */
+        this.items = list
+          .filter((it) => Number(it.kind) === 1)
+          .map((it) => ({ id: it.id, url: it.url || '', is_selected: Number(it.is_selected) === 1 }))
         this.selectedIds = this.items.filter((it) => it.is_selected).map((it) => it.id)
       } catch (e) {
-        /* 联调后移除：接口未通时降级演示样片（初始勾选 20+4 复现 C13 稿面状态） */
-        this.items = Array.from({ length: 24 }, (_, i) => ({ id: i + 1, url: '', is_selected: i < 24 }))
-        this.selectedIds = this.items.map((it) => it.id)
+        /* request 层已 toast；不注入演示样片（避免把接口异常伪装成「有片可选」） */
+        this.items = []
+        this.selectedIds = []
       }
     },
     isSelected(item) {

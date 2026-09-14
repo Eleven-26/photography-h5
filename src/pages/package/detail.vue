@@ -22,14 +22,23 @@
       <view class="pkg__topbar-btn" />
     </view>
 
+    <!-- 套餐不存在 / 已下架 / id 非法：整页让位给空态 + 返回入口，
+         避免停在"半张空白页"让人以为页面坏了（后端 errs 已给出「套餐不存在」文案） -->
+    <view v-if="notFound" class="pkg__empty">
+      <AppEmpty text="套餐不存在或已下架" />
+      <view class="pkg__empty-btn">
+        <AppButton block @click="goBack">返回</AppButton>
+      </view>
+    </view>
+
+    <template v-else>
     <!-- ① 头图 240px + 底部渐变（稿 hero 顶 y98 = 导航底 88 + 10px） -->
     <view class="pkg__hero">
-      <image class="pkg__hero-img" :src="pkg.cover_url" mode="aspectFill" />
+      <image class="pkg__hero-img" :src="pkg.cover" mode="aspectFill" />
       <view class="pkg__hero-mask" />
-      <!-- 精选推荐金标（biz_package.is_featured，字段名联调核对） -->
-      <view v-if="pkg.is_featured !== false" class="pkg__featured-tag">
-        <text>精选推荐</text>
-      </view>
+      <!-- 原「精选推荐」金标已移除：biz_package 无对应字段（2026-09-14 核对 DDL）。
+           此前读的是臆想的 is_featured（后端不返回 → undefined → 判断恒真），
+           属"看着像真数据其实写死的假元素"，故去掉而不是换成别的硬编码。 -->
     </view>
 
     <!-- ② 标题 + 价格（名 18 Bold / 价 32 Bold + 「/ 次」13 次级） -->
@@ -41,7 +50,7 @@
       </view>
     </view>
 
-    <!-- ③ 适合人群（biz_package.suitable_tags，高亮态数据联调核对） -->
+    <!-- ③ 适合人群（biz_package.suitable_for，逗号分隔字符串；前两项为设计稿高亮态） -->
     <template v-if="suitableTags.length">
       <AppSection title="适合人群" />
       <view class="pkg__tags">
@@ -67,7 +76,7 @@
       </view>
     </view>
 
-    <!-- ⑤ 费用明细（定金 30% / 加选 ¥60/张 为全局口径） -->
+    <!-- ⑤ 费用明细（金额一律读 biz_package 落库值：base_price / deposit_amt / addon_unit_price） -->
     <AppSection title="费用明细" />
     <view class="card pkg__panel">
       <view class="pkg__row">
@@ -75,7 +84,7 @@
         <text class="pkg__row-value">¥{{ formatAmount(pkg.base_price) }}</text>
       </view>
       <view class="pkg__row">
-        <text class="pkg__row-label-plain">定金 (30%)</text>
+        <text class="pkg__row-label-plain">定金（{{ depositPercent }}%）</text>
         <text class="pkg__row-value">¥{{ formatAmount(depositAmount) }}</text>
       </view>
       <view class="pkg__row">
@@ -84,11 +93,12 @@
       </view>
       <view class="pkg__row">
         <text class="pkg__row-label-plain">加选精修</text>
-        <text class="pkg__row-value">¥60/张</text>
+        <text class="pkg__row-value">{{ pkg.addon_unit_price > 0 ? `¥${formatAmount(pkg.addon_unit_price)}/张` : '—' }}</text>
       </view>
     </view>
 
-    <!-- ⑥ 交付 -->
+    <!-- ⑥ 交付（字段对齐 biz_package.delivery_days / download_days；原文案写的
+         download_valid_days 是臆想字段，后端不返回 → 恒显 30 天） -->
     <AppSection title="交付" />
     <view class="card pkg__panel">
       <view class="pkg__row">
@@ -97,30 +107,33 @@
       </view>
       <view class="pkg__row">
         <text class="pkg__row-label-plain">下载有效期</text>
-        <text class="pkg__row-value">{{ pkg.download_valid_days || 30 }}天</text>
+        <text class="pkg__row-value">{{ pkg.download_days || 30 }}天</text>
       </view>
     </view>
 
-    <!-- ⑦ 改期 / 取消规则（三全局规则固定文案；参数读 biz_studio_setting 联调核对） -->
+    <!-- ⑦ 改期 / 取消规则（阈值读 biz_studio_setting.reschedule_*，不再写死 72/20%/24） -->
     <AppSection title="改期 / 取消规则" />
     <view class="card pkg__rules">
       <view class="pkg__rule">
         <view class="pkg__rule-dot pkg__rule-dot--green" />
-        <text>提前72小时可免费改期</text>
+        <text>提前{{ policy.freeHours }}小时可免费改期</text>
       </view>
       <view class="pkg__rule">
         <view class="pkg__rule-dot pkg__rule-dot--gold" />
-        <text>72小时内改期收取20%调度费</text>
+        <text>{{ policy.freeHours }}小时内改期收取{{ policy.feeRate }}%调度费</text>
       </view>
       <view class="pkg__rule">
         <view class="pkg__rule-dot pkg__rule-dot--red" />
-        <text>24小时内不可改期</text>
+        <text>{{ policy.minHours }}小时内不可改期</text>
       </view>
     </view>
 
-    <!-- ⑧ 作品参考（该套餐关联作品，双列网格同 C01/C24 规格） -->
+    <!-- ⑧ 作品参考（该套餐关联作品）—— biz_package 当前**无「关联作品」字段**，
+         后端也未提供「按套餐过滤作品」的查询，故此处恒为空 + 空态文案，
+         不再用画板图冒充真实作品（2026-09-14 核对 DDL 后的决定）。 -->
     <AppSection title="作品参考" />
     <AppWorkGrid :items="pkg.works || []" />
+    <AppEmpty v-if="!(pkg.works || []).length" text="暂无关联作品" />
     <view class="pkg__bottom-space" />
 
     <!-- ⑨ 底栏双钮：主「选择日期」→ C03（快捷直约入口，套餐须已上架）+ 次「定制需求」→ C27 -->
@@ -128,83 +141,154 @@
       <AppButton flex @click="goDate">选择日期</AppButton>
       <AppButton type="secondary" size="hug" @click="goCustom">定制需求</AppButton>
     </AppFooter>
+    </template>
   </view>
 </template>
 
 <script>
 /**
  * 套餐详情（画板 C02）· 2026-09-07 对稿还原
- * 数据源：getPackageDetail（biz_package，仅展示；status!==1 时后端拦截）
- * ⚠️ 金额口径：deposit/final 为 30% 规则的展示推导（DECIMAL 元直读，不做
- *    分转换单独运算）；联调后如服务端返回 deposit_amount 等字段则改为直读。
+ * 数据源：getPackageDetail（biz_package，仅展示；已下架/不存在由后端拦截）
+ *
+ * ⚠️ 2026-09-14 字段对齐修正：本页原来读的是一批**后端不存在的臆想字段**——
+ *    cover_url / suitable_tags / duration_hours / location_desc / raw_photos /
+ *    revisions / download_valid_days / is_featured / works。
+ *   真实字段：cover / suitable_for（逗号分隔串）/ shoot_hours / locations（JSON 数组）/
+ *   raw_count / revision_count / download_days；且**没有** is_featured，也**没有**
+ *   套餐↔作品关联。金额一律读落库值（base_price / deposit_amt / addon_unit_price），
+ *   不再由前端自编 30% 规则。
  */
 import { getPackageDetail } from '@/api/package'
+import { getStudioInfo } from '@/api/studio'
 import { formatAmount } from '@/utils/format'
+import { allowPlaceholder } from '@/utils/demo'
 import AppSection from '@/components/AppSection.vue'
 import AppButton from '@/components/AppButton.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppWorkGrid from '@/components/AppWorkGrid.vue'
+import AppEmpty from '@/components/AppEmpty.vue'
 
 export default {
-  components: { AppSection, AppButton, AppFooter, AppWorkGrid },
+  components: { AppSection, AppButton, AppFooter, AppWorkGrid, AppEmpty },
   data() {
     return {
       pkg: {},
+      /** 不存在 / 已下架 / id 非法 → 整页空态，不留半张空白页 */
+      notFound: false,
+      /** 改期政策（biz_studio_setting.reschedule_*）；取不到就用后端同款默认值 */
+      policy: { freeHours: 72, minHours: 24, feeRate: 20 },
     }
   },
   computed: {
-    /** 定金 = 套餐价 × 30%（展示推导，联调核对服务端字段） */
+    /**
+     * 定金：优先读落库值 biz_package.deposit_amt（= 基础价 × 比例，与下单口径同源）；
+     * 仅在缺失时才按比例推导，避免前端自算与后端算出来的数不一致。
+     */
     depositAmount() {
+      const amt = Number(this.pkg.deposit_amt)
+      if (amt > 0) return amt
       const n = Number(this.pkg.base_price) || 0
-      return Math.round(n * 0.3 * 100) / 100
+      const rate = Number(this.pkg.deposit_rate)
+      // deposit_rate 在 DDL 里是「百分数」（如 30.00），异常值退回 30%
+      const pct = rate > 0 && rate <= 100 ? rate : 30
+      return Math.round(n * (pct / 100) * 100) / 100
     },
-    /** 尾款 = 套餐价 − 定金（同上；加选差价由后端并入 final_due，见确认单口径③） */
+    /** 尾款 = 套餐价 − 定金（加选差价由后端并入 final_due，见确认单口径③） */
     finalAmount() {
       const n = Number(this.pkg.base_price) || 0
       return Math.round((n - this.depositAmount) * 100) / 100
     },
-    /** 适合人群标签（C02 实测前两项白底高亮；active 字段联调核对） */
-    suitableTags() {
-      const tags = this.pkg.suitable_tags || ['家庭', '亲子', '纪念日', '孕妇']
-      return tags.map((t, i) => ({
-        name: typeof t === 'string' ? t : t.name,
-        active: typeof t === 'object' ? !!t.active : i < 2,
-      }))
+    /** 定金百分比：按落库金额反推，绕开 deposit_rate 的单位歧义（DDL 是百分数、PC 表单当小数） */
+    depositPercent() {
+      const base = Number(this.pkg.base_price) || 0
+      const amt = Number(this.pkg.deposit_amt) || 0
+      if (base > 0 && amt > 0) return Math.round((amt / base) * 100)
+      return 30
     },
-    /** 服务内容行（C02 实测五项；字段名联调核对） */
+    /** 适合人群：biz_package.suitable_for 是**逗号分隔字符串**（不是数组），前两项保留高亮态 */
+    suitableTags() {
+      const raw = this.pkg.suitable_for
+      if (!raw) return []
+      return String(raw)
+        .split(/[,，]/)
+        .map((s) => s.trim())
+        .filter(Boolean)
+        .map((name, i) => ({ name, active: i < 2 }))
+    },
+    /** 服务内容行（五项全部对齐 biz_package 真实列，无值显示 — 而不编造默认值） */
     serviceRows() {
       const p = this.pkg
       return [
-        { icon: 'clock-xs', label: '拍摄时长', value: p.duration_hours ? `${p.duration_hours}小时` : '2.5小时' },
-        { icon: 'pin-xs', label: '拍摄地点', value: p.location_desc || '越秀公园 / 室内' },
-        { icon: 'image-xs', label: '精修数量', value: p.photos_included ? `${p.photos_included}张` : '20张' },
-        { icon: 'photo-xs', label: '原片数量', value: p.raw_photos ? `${p.raw_photos}张` : '100+张' },
-        { icon: 'refresh-xs', label: '修改次数', value: p.revisions != null ? `${p.revisions}次` : '2次' },
+        { icon: 'clock-xs', label: '拍摄时长', value: p.shoot_hours ? `${p.shoot_hours}小时` : '—' },
+        { icon: 'pin-xs', label: '拍摄地点', value: this.packageLocations || '拍摄时商定' },
+        { icon: 'image-xs', label: '精修数量', value: p.photos_included != null ? `${p.photos_included}张` : '—' },
+        { icon: 'photo-xs', label: '原片数量', value: p.raw_count ? `${p.raw_count}张` : '—' },
+        { icon: 'refresh-xs', label: '修改次数', value: p.revision_count != null ? `${p.revision_count}次` : '—' },
       ]
+    },
+    /** biz_package.locations 是 JSON 数组 [{name,extra_fee,is_default}]，取出名字拼展示串 */
+    packageLocations() {
+      const raw = this.pkg.locations
+      if (!raw) return ''
+      try {
+        const arr = JSON.parse(raw)
+        if (!Array.isArray(arr)) return ''
+        return arr
+          .map((x) => (typeof x === 'string' ? x : x && x.name))
+          .filter(Boolean)
+          .join(' / ')
+      } catch {
+        return ''
+      }
     },
   },
   onLoad(options) {
-    this.loadDetail(options && options.id)
+    this.loadDetail(Number(options && options.id) || 0)
+    this.loadPolicy()
   },
   methods: {
     formatAmount,
     async loadDetail(id) {
+      if (!id) {
+        this.notFound = true
+        return
+      }
       try {
         const res = await getPackageDetail(id)
         this.pkg = res || {}
-      } catch (e) {
-        // request 层已 toast；保留空态，用户可返回
+      } catch {
+        // request 层已 toast 后端文案（如「套餐不存在」）→ 落空态，不再冒充成演示套餐
+        this.notFound = true
       }
-      // 演示兜底：后端未联调时用画板导出原图占位（联调后移除）
-      if (!this.pkg.cover_url) {
-        this.pkg = {
-          ...this.pkg,
-          id: this.pkg.id || id || 'demo-p2',
-          name: this.pkg.name || '全套精修套餐',
-          base_price: this.pkg.base_price || 2680,
-          cover_url: '/static/img/pkg-2.jpg',
-          works: ['/static/img/work-2.jpg', '/static/img/work-3.jpg', '/static/img/work-4.jpg', '/static/img/work-5.jpg'].map((u, i) => ({ id: `demo-g${i}`, cover_url: u })),
+      this.applyPlaceholder()
+    },
+    /**
+     * 占位兜底：**仅 VITE_ALLOW_DEMO=true 时**生效（见 utils/demo.js）。
+     * ⚠️ 绝不伪造 id —— 原来会把 id 兜成字符串 'demo-p2'，点「选择日期」带着它请求真接口，
+     * 后端路径参数解析失败直接 400。这正是"点套餐详情报错"的成因之一。
+     */
+    applyPlaceholder() {
+      if (!allowPlaceholder() || this.pkg.id) return
+      this.pkg = {
+        ...this.pkg,
+        name: this.pkg.name || '全套精修套餐',
+        base_price: this.pkg.base_price || 2680,
+        cover: this.pkg.cover || '/static/img/pkg-2.jpg',
+      }
+    },
+    /** 改期政策：阈值展示口径与后端 domain.ReschedulePolicy 一致 */
+    async loadPolicy() {
+      try {
+        const st = await getStudioInfo()
+        if (st) {
+          this.policy = {
+            freeHours: st.reschedule_free_hours != null ? st.reschedule_free_hours : 72,
+            minHours: st.reschedule_min_hours != null ? st.reschedule_min_hours : 24,
+            feeRate: st.reschedule_fee_rate != null ? st.reschedule_fee_rate : 20,
+          }
         }
+      } catch {
+        // 静默：政策拿不到就按默认值展示，不阻塞套餐详情
       }
     },
     goBack() {
@@ -214,6 +298,10 @@ export default {
     },
     /** 快捷直约：仅已上架完整套餐可进（口径②，后端 BookingSubmit 双重校验） */
     goDate() {
+      if (!this.pkg.id) {
+        uni.showToast({ title: '套餐信息未加载', icon: 'none' })
+        return
+      }
       uni.navigateTo({ url: `/pages/booking/date?package_id=${this.pkg.id}` })
     },
     goCustom() { uni.navigateTo({ url: '/pages/custom/request' }) },
@@ -254,17 +342,18 @@ export default {
     border-radius: $radius-cell;
   }
   &__topbar-title { color: $text-1; font-size: $fs-xl; font-weight: 700; } /* 稿 20px（原 16px 偏小） */
-  /* 精选推荐金标：稿实测底 #D9A735（$gold）+ 白字 11 Medium r999，
-     尺寸 x16.5-75 / y301-324（高 23px），头图左下 16px */
-  &__featured-tag {
-    position: absolute;
-    left: 32rpx;
-    bottom: 24rpx;
-    padding: 10rpx 16rpx; /* 稿 高 23px */
-    background-color: $gold;
-    border-radius: $radius-btn;
-    text { color: $text-1; font-size: $fs-xs; font-weight: 500; }
+  /* 套餐不存在 / 已下架时的整页空态（模板 v-if="notFound"）。
+     ⚠️ 原「精选推荐金标」(&__featured-tag) 样式已随该元素一并移除：
+     biz_package 无对应字段，读臆想的 is_featured 会恒为真，属写死的假元素。 */
+  &__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 40rpx;
+    padding: 160rpx $page-pad 0;
   }
+  &__empty-btn { width: 100%; }
 
   /* ② 标题 + 价格 */
   &__head {

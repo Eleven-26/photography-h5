@@ -7,7 +7,7 @@
     >
       <image
         class="app-work-grid__img"
-        :src="item.cover_url || item.url"
+        :src="item.cover || item.cover_url || item.url"
         mode="aspectFill"
         lazy-load
         @click="preview(index)"
@@ -33,12 +33,12 @@
 export default {
   name: 'AppWorkGrid',
   props: {
-    /** 作品数组：[{ id, url | cover_url }] */
+    /** 作品数组：[{ id, cover | cover_url | url }] —— cover 是 biz_asset 的真实字段名 */
     items: { type: Array, default: () => [] },
   },
   methods: {
     urls() {
-      return (this.items || []).map((i) => i.cover_url || i.url).filter(Boolean)
+      return (this.items || []).map((i) => i.cover || i.cover_url || i.url).filter(Boolean)
     },
     preview(index) {
       const list = this.urls()

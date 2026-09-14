@@ -86,11 +86,26 @@ export const QUOTE_STATUS = {
   5: '已成交',
 }
 
-/** 套餐状态 biz_package.status（DDL：1-已上架 2-草稿 3-已下线；快捷直约仅对 status=1 开放，口径②） */
+/**
+ * 套餐状态 biz_package.status —— **以后端 enum.PackageStatus 为准**：
+ * 1-草稿 / 2-已上架 / 3-已下线（PC 端 photography-frontend/src/constants/enums.ts 同值）。
+ *
+ * ⚠️ 2026-09-14 修正：此处原按 docs/sql/ddl.sql 的列 COMMENT 写成「1-已上架 2-草稿」，
+ * 与后端枚举（enum/catalog.go）+ PC 端基线完全相反 —— 首页据此过滤后端正常返回的
+ * 已上架套餐（status=2）会把整批滤空、再落到演示数据，表现为「套餐列表不是真实数据」。
+ * 快捷直约仅对 **status=2 已上架** 开放（后端 BookingSubmit 二次校验）。
+ */
 export const PACKAGE_STATUS = {
-  1: '已上架',
-  2: '草稿',
-  3: '已下线',
+  DRAFT: 1,
+  ACTIVE: 2,
+  OFFLINE: 3,
+}
+
+/** 套餐状态中文名（标签 / 筛选项展示用） */
+export const PACKAGE_STATUS_LABEL = {
+  [PACKAGE_STATUS.DRAFT]: '草稿',
+  [PACKAGE_STATUS.ACTIVE]: '已上架',
+  [PACKAGE_STATUS.OFFLINE]: '已下线',
 }
 
 /** 收款方式类型 biz_payment_method.type（DDL：wechat-微信 alipay-支付宝 bank-银行转账 cash-现金 other-其他） */

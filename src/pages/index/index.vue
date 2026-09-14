@@ -62,7 +62,7 @@
       </view>
     </view>
 
-    <!-- ③ 精选服务：已上架套餐（status=1，口径②）横滑卡片 -->
+    <!-- ③ 精选服务：已上架套餐（status=2，口径②）横滑卡片 -->
     <AppSection title="精选服务" />
     <scroll-view class="home__pkgs" scroll-x :show-scrollbar="false">
       <view
@@ -73,7 +73,7 @@
       >
         <image
           class="home__pkg-img"
-          :src="pkg.cover_url"
+          :src="pkg.cover"
           mode="aspectFill"
           lazy-load
         />
@@ -139,12 +139,21 @@
 /**
  * 首页（画板 C01）—— 摄影师主页 · 2026-09-07 对稿还原
  * 数据源：getStudioInfo（biz_studio_setting 工作室信息 + biz_asset 精选作品）、
- *        getPackages（biz_package，仅 status=1 已上架——快捷直约口径②）
- * 待联调核对：studio 统计字段（works/clients/rate 的真实来源字段名）、
- *            套餐 cover_url / 时长字段、FAQ 数据接口
+ *        getPackages（biz_package，仅 status=2 已上架 —— 快捷直约口径②）
+ *
+ * ⚠️ 2026-09-14 修掉两处会让「套餐列表不是真实数据」的硬伤：
+ *   1. **分页结构**：接口返回 {list,total,page,page_size}（后端 response.PageOK），
+ *      不是裸数组 —— 原来当数组读，`.filter` 直接抛 TypeError 被 catch 静默吞掉，
+ *      列表恒为空、再落到演示数据；
+ *   2. **状态口径**：已上架 = status 2（enum.PackageStatus.Active），原来按 1 过滤，
+ *      后端返回的真实套餐被整批滤掉。口径见 constants/enums.js。
+ * 待联调核对：studio 统计字段（works/clients/rate 后端暂无来源列）、
+ *            工作室封面/名称（biz_studio_setting 无对应列，待后端补聚合返回）
  */
 import { getStudioInfo } from '@/api/studio'
 import { getPackages } from '@/api/package'
+import { PACKAGE_STATUS } from '@/constants/enums'
+import { allowPlaceholder } from '@/utils/demo'
 import { formatAmount as formatPrice } from '@/utils/format'
 import AppSection from '@/components/AppSection.vue'
 import AppFooter from '@/components/AppFooter.vue'
@@ -165,8 +174,8 @@ const DEMO_STUDIO = {
   cover_url: '/static/img/hero.jpg', // 画板 1:59 studio-space
 }
 const DEMO_PACKAGES = [
-  { id: 'demo-p1', name: '轻写真套餐', duration_hours: 1.5, photos_included: 20, base_price: 1680, cover_url: '/static/img/pkg-1.jpg', status: 1 },
-  { id: 'demo-p2', name: '全套精修套餐', duration_hours: 2.5, photos_included: 20, base_price: 2680, cover_url: '/static/img/pkg-2.jpg', status: 1 },
+  { id: 'demo-p1', name: '轻写真套餐', shoot_hours: 1.5, photos_included: 20, base_price: 1680, cover: '/static/img/pkg-1.jpg', status: PACKAGE_STATUS.ACTIVE },
+  { id: 'demo-p2', name: '全套精修套餐', shoot_hours: 2.5, photos_included: 20, base_price: 2680, cover: '/static/img/pkg-2.jpg', status: PACKAGE_STATUS.ACTIVE },
 ]
 const DEMO_WORKS = [1, 2, 3, 4, 5, 6].map((n) => ({ id: `demo-w${n}`, cover_url: `/static/img/work-${n}.jpg` }))
 
@@ -205,9 +214,9 @@ export default {
   methods: {
     formatPrice,
     pad2(n) { return n < 10 ? '0' + n : String(n) },
-    /** 套餐规格行：时长 · 精修张数（C01 实测「2.5h · 20张精修」，字段名联调核对） */
+    /** 套餐规格行：时长 · 精修张数（字段对齐 biz_package.shoot_hours / photos_included） */
     pkgMeta(pkg) {
-      const hours = pkg.duration_hours != null ? `${pkg.duration_hours}h` : ''
+      const hours = pkg.shoot_hours != null ? `${pkg.shoot_hours}h` : ''
       const photos = pkg.photos_included != null ? `${pkg.photos_included}张精修` : ''
       return [hours, photos].filter(Boolean).join(' · ') || '详情咨询'
     },
@@ -216,15 +225,23 @@ export default {
         const [home, pkgs] = await Promise.all([getStudioInfo(), getPackages()])
         this.studio = (home && home.studio) || {}
         this.featuredWorks = (home && home.featured_assets) || []
-        // 双保险：仅已上架套餐（status=1，口径②）
-        this.packages = (pkgs || []).filter((p) => p.status === 1)
+        // 分页响应是 {list,total,page,page_size}（后端 response.PageOK），不是裸数组；
+        // 只留「已上架」（status=2，口径②，见 constants/enums.js）
+        this.packages = ((pkgs && pkgs.list) || []).filter(
+          (p) => Number(p.status) === PACKAGE_STATUS.ACTIVE
+        )
       } catch (e) {
         // 错误已由 request 层统一 toast，此处保留已有数据不清空
       }
       this.applyDemoIfEmpty()
     },
-    /** 演示兜底：接口无数据（后端未联调）时用画板原图占位，联调后移除本方法 */
+    /**
+     * 占位兜底：**仅在 VITE_ALLOW_DEMO=true 时**才用画板数据顶上（见 utils/demo.js）。
+     * 默认关闭 —— 一旦默认开启，接口的「空数据」会被伪装成「页面正常」，真实问题
+     * （分页结构 / 状态口径 / 字段名对不上）全被掩盖，本页 2026-09-14 的排查就因此被带偏。
+     */
     applyDemoIfEmpty() {
+      if (!allowPlaceholder()) return
       if (!this.studio.cover_url) this.studio = { ...DEMO_STUDIO, ...this.studio }
       if (!this.packages.length) this.packages = DEMO_PACKAGES
       if (!this.featuredWorks.length) this.featuredWorks = DEMO_WORKS
@@ -239,7 +256,15 @@ export default {
       uni.showToast({ title: '敬请期待', icon: 'none' })
     },
     goWorks() { uni.navigateTo({ url: '/pages/works/index' }) },
-    goPackage(id) { uni.navigateTo({ url: `/pages/package/detail?id=${id}` }) },
+    goPackage(id) {
+      // 占位数据（VITE_ALLOW_DEMO=true 时）的 id 是字符串，后端路径参数解析不了 → 直接提示，
+      // 不发这次必然 400 的请求（这正是"点套餐详情报错"的原始成因）
+      if (typeof id !== 'number') {
+        uni.showToast({ title: '演示数据，无对应套餐详情', icon: 'none' })
+        return
+      }
+      uni.navigateTo({ url: `/pages/package/detail?id=${id}` })
+    },
     goCustom() { uni.navigateTo({ url: '/pages/custom/request' }) },
   },
 }

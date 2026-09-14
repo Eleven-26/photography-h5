@@ -14,6 +14,20 @@
       <text class="page-cx__hero-sub">不限套餐 · 按需报价 · 1对1沟通</text>
     </view>
 
+    <!-- ⓪ 联系方式（非画板元素，联调补齐）
+         后端 /h5/custom-request/submit 挂在**公开路由组**（无 CustomerAuth），
+         GetClientUser 恒为 nil → 一律按「游客」处理，mobile 必填（见 service/client_catalog.go
+         → ClientSubmitCustomRequest）。已登录客户用本地缓存自动带出，仍可改。 -->
+    <view class="page-cx__label"><text>称呼</text></view>
+    <view class="page-cx__input">
+      <input v-model="form.name" class="page-cx__input-el" :maxlength="20" placeholder="怎么称呼你" placeholder-class="page-cx__ph" />
+    </view>
+
+    <view class="page-cx__label"><text>联系电话</text></view>
+    <view class="page-cx__input">
+      <input v-model="form.mobile" class="page-cx__input-el" type="number" :maxlength="11" placeholder="便于摄影师与你联系" placeholder-class="page-cx__ph" />
+    </view>
+
     <!-- ② 拍摄类型（C27 实测六胶囊，单选） -->
     <view class="page-cx__label"><text>拍摄类型</text></view>
     <view class="page-cx__pills">
@@ -38,16 +52,16 @@
       <input v-model="form.address" class="page-cx__input-el" placeholder="如：广州天河区附近" placeholder-class="page-cx__ph" />
     </view>
 
-    <!-- ⑤ 预算范围（C27 实测四胶囊，单选） -->
+    <!-- ⑤ 预算范围（C27 实测四胶囊，单选；档位 → budget_min/budget_max 数字区间） -->
     <view class="page-cx__label"><text>预算范围</text></view>
     <view class="page-cx__pills">
       <text
         v-for="b in BUDGETS"
-        :key="b"
+        :key="b.label"
         class="page-cx__pill"
-        :class="{ 'page-cx__pill--on': form.budget === b }"
-        @click="form.budget = b"
-      >{{ b }}</text>
+        :class="{ 'page-cx__pill--on': form.budget === b.label }"
+        @click="form.budget = b.label"
+      >{{ b.label }}</text>
     </view>
 
     <!-- ⑥ 详细需求（C27 实测 Textarea h100 r12） -->
@@ -96,7 +110,17 @@
 /**
  * C27 定制需求（画板 1:1387 一比一还原）
  * 业务口径②：定制需求一律走报价（custom_request → 线索 → 报价），不走快捷直约
- * 数据源：biz_custom_request（type/date/address/budget/detail/ref_images）→ submitCustomRequest
+ *
+ * 数据源：biz_custom_request → submitCustomRequest（POST /h5/custom-request/submit）
+ * 字段契约（**以 dto.ClientCustomRequestReq 为准**，勿再按页内命名臆造）：
+ *   name / mobile / project_type / expected_date / location /
+ *   budget_min / budget_max / detail / images(逗号分隔串)
+ * 注意 3 个易错点：
+ *   1. 拍摄类型叫 project_type（不是 type）；日期叫 expected_date；地点叫 location（不是 address）；
+ *   2. 预算是**两个数字** budget_min/budget_max，稿面 4 个胶囊需映射成区间（见 BUDGETS）；
+ *   3. 参考图是**逗号分隔字符串**（不是数组），提交前需 join(',')。
+ * 游客门槛：该接口无客户鉴权（公开路由组），后端一律按游客走 → **mobile 必填**（name 可空）。
+ *
  * 预算/类型为稿面固定枚举；联调时如需 photographers 端可配置再改接口驱动。
  * ⚠️ 摄影师姓名后端未下发（studio/info 无该字段、package 亦无），页内不再写死姓名，
  *    文案统一用「摄影师」泛称。
@@ -105,9 +129,22 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { submitCustomRequest } from '@/api/customRequest'
+import { getCustomer } from '@/utils/auth'
 
 const TYPES = ['家庭纪念', '个人写真', '情侣/婚纱', '儿童写真', '活动跟拍', '其他']
-const BUDGETS = ['¥1,000以内', '¥1,000-3,000', '¥3,000-5,000', '¥5,000以上']
+
+/**
+ * 预算档位 → 后端数字区间（budget_min/budget_max）。
+ * 末档 `¥5,000以上` 上限填 0 = 不封顶（后端 decimal 语义：0 表示未设上限）。
+ * ℹ️ PC 端 LeadsView 以 `budget_max` 有值作为「区间已知」的判据，末档会显示为「预算待确认」——
+ *    下限 5000 仍完整落库，不会丢失。
+ */
+const BUDGETS = [
+  { label: '¥1,000以内', min: 0, max: 1000 },
+  { label: '¥1,000-3,000', min: 1000, max: 3000 },
+  { label: '¥3,000-5,000', min: 3000, max: 5000 },
+  { label: '¥5,000以上', min: 5000, max: 0 },
+]
 
 export default {
   components: { AppNavBar, AppFooter, AppButton },
@@ -116,6 +153,9 @@ export default {
       TYPES,
       BUDGETS,
       form: {
+        /* 联系方式：后端按游客处理必填手机号（见页头契约说明） */
+        name: '',
+        mobile: '',
         type: '家庭纪念',
         date: '',
         address: '',
@@ -124,6 +164,14 @@ export default {
         refImages: [],
       },
       submitting: false,
+    }
+  },
+  onLoad() {
+    /* 已登录客户自动带出称呼/手机号（仍可改）；未登录保持空白，由用户填写 */
+    const cu = getCustomer()
+    if (cu) {
+      this.form.name = this.form.name || cu.name || ''
+      this.form.mobile = this.form.mobile || cu.mobile || ''
     }
   },
   methods: {
@@ -137,19 +185,40 @@ export default {
       })
     },
     async onSubmit() {
+      /* 游客门槛：手机号后端必填；称呼为员工跟进所需（校验失败保留已填输入） */
+      const name = this.form.name.trim()
+      const mobile = this.form.mobile.trim()
+      if (!name) {
+        uni.showToast({ title: '请填写称呼', icon: 'none' })
+        return
+      }
+      if (!/^1[3-9]\d{9}$/.test(mobile)) {
+        uni.showToast({ title: '请填写正确的手机号', icon: 'none' })
+        return
+      }
       if (!this.form.detail.trim()) {
         uni.showToast({ title: '请描述你的详细需求', icon: 'none' }) /* 输入保留 */
         return
       }
+      /* 稿面胶囊（label）→ 后端数字区间；未匹配到按「0/0 未设预算」兜底 */
+      const budget = BUDGETS.find((b) => b.label === this.form.budget) || { min: 0, max: 0 }
+
       this.submitting = true
       try {
         await submitCustomRequest({
-          type: this.form.type,
-          expect_date: this.form.date,
-          address: this.form.address,
-          budget: this.form.budget,
-          detail: this.form.detail,
-          ref_images: this.form.refImages,
+          /* ⚠️ 字段名严格对齐 dto.ClientCustomRequestReq，
+             勿改回 type / address / budget / ref_images 等页内命名（它们是旧版臆造字段，后端全部收不到） */
+          name,
+          mobile,
+          project_type: this.form.type,
+          expected_date: this.form.date.trim(),
+          location: this.form.address.trim(),
+          budget_min: budget.min,
+          budget_max: budget.max,
+          detail: this.form.detail.trim(),
+          /* 参考图：后端要**逗号分隔串**。当前仍为本地临时路径（H5 尚无上传接口，与 pay/deposit
+             同一 TODO）；打通上传后这里换成 OSS URL 即可，调用位置无需再动。 */
+          images: this.form.refImages.join(','),
         })
         uni.showToast({ title: '需求已提交，等待报价', icon: 'success' })
         /* 定制流程：线索 → 报价 → C06 确认（无直约，口径②） */

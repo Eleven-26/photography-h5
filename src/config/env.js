@@ -17,10 +17,15 @@
  */
 /* eslint-disable no-useless-assignment, no-unreachable -- 见上方文件说明（uni-app 条件编译） */
 
-/** 后端源地址：H5 留空 = 同源相对路径（走 /api 代理）；小程序无代理，必须直连后端源 */
-let apiBase = 'http://localhost:8080' // 小程序端：本地联调指向本机，上线改为 https 合法域名
+/**
+ * 后端源地址（可由 `.env.[mode]` 覆盖，改地址不必动代码）：
+ *   - 小程序端 → VITE_MP_API_BASE_URL。**无代理**，必须直连后端源；上线填微信后台的
+ *     request 合法域名（https、不带路径）。留空回退到本机地址，真机上连不通。
+ *   - H5 端   → VITE_API_BASE_URL。留空 = 同源相对路径，由 devServer / 容器 nginx 剥 /api 前缀。
+ */
+let apiBase = import.meta.env.VITE_MP_API_BASE_URL || 'http://localhost:8080'
 // #ifdef H5
-apiBase = ''
+apiBase = import.meta.env.VITE_API_BASE_URL || ''
 // #endif
 export const API_BASE = apiBase
 

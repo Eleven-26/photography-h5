@@ -1,5 +1,5 @@
 {
-  "_comment": "全量路由注册（小程序式架构）。命名映射需求文档 v1.3 第 7 章画板：C01=首页 C02=套餐 C03=选日期 C04=需求 C05=预约确认 C06=报价 C07/C08=定金登记 C09/C11/C12=订单 C13=选片 C14/C15=反馈确认 C16/C16A=尾款 C17=交付 C18/C19/B2=改期 C20/C21=取消退款 C24=作品 C27=定制需求",
+  "_comment": "全量路由注册（小程序式架构）。命名映射需求文档 v1.3 第 7 章画板：C01=首页 C02=套餐 C03=选日期 C04=需求 C05=预约确认 C06=报价 C07/C08=定金登记 C09/C11/C12=订单 C13=选片 C14/C15=反馈确认 C16/C16A=尾款 C17=交付 C18/C19/B2=改期 C20/C21=取消退款 C24=作品 C27=定制需求 CC01=客户中心（我的）",
   "easycom": {
     "autoscan": true,
     "custom": {
@@ -35,7 +35,11 @@
     { "path": "pages/reschedule/fee", "style": { "navigationBarTitleText": "调度费支付登记" } },
     { "path": "pages/reschedule/fee-result", "style": { "navigationBarTitleText": "支付状态" } },
     { "path": "pages/cancel/index", "style": { "navigationBarTitleText": "取消订单" } },
-    { "path": "pages/refund/progress", "style": { "navigationBarTitleText": "退款进度" } }
+    { "path": "pages/refund/progress", "style": { "navigationBarTitleText": "退款进度" } },
+    { "path": "pages/me/index", "style": { "navigationBarTitleText": "我的" } },
+    { "path": "pages/me/profile", "style": { "navigationBarTitleText": "个人资料" } },
+    { "path": "pages/me/reviews", "style": { "navigationBarTitleText": "我的评价" } },
+    { "path": "pages/me/requests", "style": { "navigationBarTitleText": "定制需求" } }
   ],
   "globalStyle": {
     "navigationBarTextStyle": "white",

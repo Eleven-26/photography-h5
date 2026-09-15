@@ -6,7 +6,7 @@
       <text class="login__slogan">预约你的专属摄影师</text>
     </view>
 
-    <!-- 表单区：手机号 + 验证码 -->
+    <!-- 表单区：手机号 + 验证码（开发环境免验证码，只剩手机号） -->
     <view class="login__form">
       <view class="login__field">
         <text class="login__prefix">+86</text>
@@ -21,7 +21,8 @@
         />
       </view>
 
-      <view class="login__field">
+      <!-- 验证码字段：仅当登录需要验证码时渲染（开发环境免验证码，判据见 config/env.js） -->
+      <view v-if="smsLoginRequired" class="login__field">
         <input
           v-model="smsCode"
           class="login__input"
@@ -39,6 +40,8 @@
           <text>{{ counting ? `${countdown}s 后重发` : '获取验证码' }}</text>
         </view>
       </view>
+      <!-- 免验证码环境提示：让联调时一眼确认开关生效，不必猜"为什么没有验证码框" -->
+      <text v-else class="login__dev-hint">开发环境：免验证码，填手机号直接登录</text>
 
       <!-- 登录按钮：白胶囊主钮；提交中 loading 防重复 -->
       <AppButton class="login__btn" :loading="submitting" @click="onLogin">登录 / 注册</AppButton>
@@ -52,10 +55,18 @@
 <script>
 /**
  * 登录页 —— 全端统一手机号验证码（需求文档 v1.3 §8：H5 双环境不依赖微信授权）
+ *
+ * ⚠️ 2026-09-15：**开发环境改为免验证码登录**（只填手机号）。
+ *   判据在 config/env.js → SMS_LOGIN_REQUIRED，与后端 h5.loginRequireSmsCode() 是同一口径：
+ *   仅 dev / docker.dev 放开，test / prod 仍强制验证码 ——
+ *   免验证码等价于「知道手机号即可登录该客户账号」，不能在生产开。
+ *   本页只是"不显示验证码框"，真正的把关在后端：绕过前端也只会拿到 400「验证码错误或已过期」。
+ *
  * 错误处理：校验失败仅高亮提示、绝不清空已输入内容（交互红线）。
  * 接口：api/auth.js（sendSmsCode / loginByCode，路径联调前与后端核对）
  */
 import { sendSmsCode, loginByCode } from '@/api/auth'
+import { SMS_LOGIN_REQUIRED } from '@/config/env'
 import { setSlug } from '@/utils/slug'
 import { setStaffId } from '@/utils/referrer'
 import { useUserStore } from '@/stores/user'
@@ -65,6 +76,8 @@ export default {
     return {
       mobile: '',
       smsCode: '',
+      /** 是否需要验证码（开发环境为 false；常量注入 data 供模板直接判断） */
+      smsLoginRequired: SMS_LOGIN_REQUIRED,
       submitting: false,
       counting: false,
       countdown: 60,
@@ -119,7 +132,10 @@ export default {
     },
     async onLogin() {
       if (!this.mobileValid) return uni.showToast({ title: '请输入正确手机号', icon: 'none' })
-      if (!/^\d{4,6}$/.test(this.smsCode)) return uni.showToast({ title: '请输入验证码', icon: 'none' })
+      // 免验证码环境跳过格式校验，code 传空串（后端同样跳过校验，见 loginRequireSmsCode）
+      if (this.smsLoginRequired && !/^\d{4,6}$/.test(this.smsCode)) {
+        return uni.showToast({ title: '请输入验证码', icon: 'none' })
+      }
       this.submitting = true
       try {
         const data = await loginByCode(this.mobile, this.smsCode)
@@ -181,6 +197,13 @@ export default {
     font-size: $fs-sm;
     padding: 12rpx 0 12rpx 24rpx;
     &--disabled { color: $text-2; }
+  }
+  /* 免验证码提示：替代验证码输入框的位置，用次要文字色，不喧宾夺主 */
+  &__dev-hint {
+    display: block;
+    color: $text-2;
+    font-size: $fs-xs;
+    padding: 0 8rpx;
   }
   &__btn { margin-top: 64rpx; width: 100%; }
   &__agreement {

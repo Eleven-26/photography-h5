@@ -41,6 +41,13 @@ export const API_PATHS = {
     detail: 'asset/detail'
   },
   slot: { list: 'slot/list' },
+  // 客户中心（CC01，登录后）：个人资料读写。
+  // 字段白名单见后端 dto.ClientProfileUpdateReq —— crm_customer 与员工端共用一张表，
+  // remark / tags / level / source / status 属工作室内部信息，客户端不可读也不可改。
+  customer: {
+    profile: 'customer/profile',
+    profileUpdate: 'customer/profile/update'
+  },
   // 定制需求
   customRequest: {
     submit: 'custom-request/submit',
@@ -77,7 +84,12 @@ export const API_PATHS = {
   payment: { list: 'payment/list' },
   pay: { mark: 'pay/mark' },
   paymentMethod: { list: 'payment-method/list' },
-  review: { create: 'review/create' },
+  review: {
+    /** :order_id = 订单 ID（订单完成后才能评价，每单一评） */
+    create: 'review/create',
+    /** 我的评价（客户中心 → 我的评价；不分页，返回评价+订单快照的集合） */
+    list: 'review/list'
+  },
   // 交付（⚠️ detail/items 的 :id = order_id；select/confirm-extra/confirm 的 :id = delivery_id）
   delivery: {
     detail: 'delivery/detail',

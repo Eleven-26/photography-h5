@@ -55,6 +55,13 @@ export const DELIVERY_KIND = {
   3: '精修成品',
 }
 
+/** 定制需求状态 biz_custom_request.status（DDL：1-待处理 2-已响应 3-已关闭） */
+export const CUSTOM_REQUEST_STATUS = {
+  1: '待处理',
+  2: '已响应',
+  3: '已关闭',
+}
+
 /** 改期费用类型 biz_order_reschedule.fee_type（DDL：1-免费 2-收调度费 3-不可改期） */
 export const FEE_TYPE = {
   1: '免费',

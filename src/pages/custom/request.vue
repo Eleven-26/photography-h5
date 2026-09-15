@@ -52,6 +52,20 @@
       <input v-model="form.address" class="page-cx__input-el" placeholder="如：广州天河区附近" placeholder-class="page-cx__ph" />
     </view>
 
+    <!-- ④-2 拍摄偏好（选填）
+         数据源：客户中心「个人资料」里保存的 prefer_style / prefer_scene，进页面自动带入、仍可改。
+         ⚠️ biz_custom_request **没有** 这两列（不改表结构的既定原则），提交时并入 detail
+         自由文本（见 onSubmit 的偏好行拼接），工作室在 PC 侧「详细需求」里能看到。 -->
+    <view class="page-cx__label"><text>偏好风格（选填）</text></view>
+    <view class="page-cx__input">
+      <input v-model="form.preferStyle" class="page-cx__input-el" :maxlength="20" placeholder="如：自然·生活感" placeholder-class="page-cx__ph" />
+    </view>
+
+    <view class="page-cx__label"><text>常用场景（选填）</text></view>
+    <view class="page-cx__input">
+      <input v-model="form.preferScene" class="page-cx__input-el" :maxlength="20" placeholder="如：户外公园" placeholder-class="page-cx__ph" />
+    </view>
+
     <!-- ⑤ 预算范围（C27 实测四胶囊，单选；档位 → budget_min/budget_max 数字区间） -->
     <view class="page-cx__label"><text>预算范围</text></view>
     <view class="page-cx__pills">
@@ -121,6 +135,11 @@
  *   3. 参考图是**逗号分隔字符串**（不是数组），提交前需 join(',')。
  * 游客门槛：该接口无客户鉴权（公开路由组），后端一律按游客走 → **mobile 必填**（name 可空）。
  *
+ * 自动带入（2026-09-15）：已登录客户从「客户中心 → 个人资料」带入
+ *   name / mobile / prefer_style / prefer_scene —— 先用本地缓存即时回填，再用
+ *   POST /h5/customer/profile 的服务端最新资料覆盖（静默失败即降级用缓存）。
+ *   偏好两项因 biz_custom_request **无对应列**，提交时并入 detail 文本（见 onSubmit）。
+ *
  * 预算/类型为稿面固定枚举；联调时如需 photographers 端可配置再改接口驱动。
  * ⚠️ 摄影师姓名后端未下发（studio/info 无该字段、package 亦无），页内不再写死姓名，
  *    文案统一用「摄影师」泛称。
@@ -129,7 +148,9 @@ import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { submitCustomRequest } from '@/api/customRequest'
-import { getCustomer } from '@/utils/auth'
+import { getProfile } from '@/api/customer'
+import { getCustomer, isLoggedIn } from '@/utils/auth'
+import { useUserStore } from '@/stores/user'
 
 const TYPES = ['家庭纪念', '个人写真', '情侣/婚纱', '儿童写真', '活动跟拍', '其他']
 
@@ -156,6 +177,9 @@ export default {
         /* 联系方式：后端按游客处理必填手机号（见页头契约说明） */
         name: '',
         mobile: '',
+        /* 拍摄偏好：客户中心「个人资料」里的 prefer_style / prefer_scene，自动带入 */
+        preferStyle: '',
+        preferScene: '',
         type: '家庭纪念',
         date: '',
         address: '',
@@ -167,14 +191,39 @@ export default {
     }
   },
   onLoad() {
-    /* 已登录客户自动带出称呼/手机号（仍可改）；未登录保持空白，由用户填写 */
-    const cu = getCustomer()
-    if (cu) {
-      this.form.name = this.form.name || cu.name || ''
-      this.form.mobile = this.form.mobile || cu.mobile || ''
-    }
+    /* 已登录客户自动带出称呼/手机号/偏好（仍可改）；未登录保持空白，由用户填写。
+       先用本地缓存即时回填（无网络等待），再用服务端最新资料覆盖 —— 客户可能刚在
+       「客户中心 → 编辑资料」改过偏好，缓存不一定是最新的。 */
+    const cu = getCustomer() || {}
+    this.form.name = cu.name || ''
+    this.form.mobile = cu.mobile || ''
+    this.form.preferStyle = cu.prefer_style || ''
+    this.form.preferScene = cu.prefer_scene || ''
+    if (isLoggedIn()) this.loadProfile()
   },
   methods: {
+    /**
+     * 拉取服务端最新资料覆盖本地回填（**静默**：取不到就沿用缓存值，不打断填写）
+     * 只覆盖非空值 —— 客户已在本页手改过内容时，不能被一次迟到的响应抹掉。
+     */
+    async loadProfile() {
+      try {
+        const p = await getProfile({ loading: false, silent: true })
+        this.form.name = p.name || this.form.name
+        this.form.mobile = p.mobile || this.form.mobile
+        this.form.preferStyle = p.prefer_style || this.form.preferStyle
+        this.form.preferScene = p.prefer_scene || this.form.preferScene
+        /* 顺手对齐本地缓存，其它页面读 getCustomer() 时也是新值 */
+        useUserStore().patchCustomer({
+          name: p.name,
+          mobile: p.mobile,
+          prefer_style: p.prefer_style,
+          prefer_scene: p.prefer_scene,
+        })
+      } catch {
+        /* 静默降级：本页是公开页，取不到资料不影响提交 */
+      }
+    },
     chooseRefs() {
       uni.chooseImage({
         count: 4,
@@ -203,6 +252,18 @@ export default {
       /* 稿面胶囊（label）→ 后端数字区间；未匹配到按「0/0 未设预算」兜底 */
       const budget = BUDGETS.find((b) => b.label === this.form.budget) || { min: 0, max: 0 }
 
+      /* 偏好风格 / 常用场景并入 detail：
+         biz_custom_request 没有这两列，且不改表结构是既定原则 —— 故以一行文本并入「详细需求」，
+         工作室在 PC 侧定制需求/线索的详细需求里能直接读到。
+         后端若后续为这两项加列，这里换成两个独立字段即可，本页其余部分无需改动。 */
+      const preferLine = [
+        this.form.preferStyle.trim() ? `偏好风格：${this.form.preferStyle.trim()}` : '',
+        this.form.preferScene.trim() ? `常用场景：${this.form.preferScene.trim()}` : '',
+      ]
+        .filter(Boolean)
+        .join('；')
+      const detail = [this.form.detail.trim(), preferLine].filter(Boolean).join('\n')
+
       this.submitting = true
       try {
         await submitCustomRequest({
@@ -215,7 +276,8 @@ export default {
           location: this.form.address.trim(),
           budget_min: budget.min,
           budget_max: budget.max,
-          detail: this.form.detail.trim(),
+          /* detail = 详细需求 + 「偏好风格/常用场景」拼接行（见上方 preferLine 说明） */
+          detail,
           /* 参考图：后端要**逗号分隔串**。当前仍为本地临时路径（H5 尚无上传接口，与 pay/deposit
              同一 TODO）；打通上传后这里换成 OSS URL 即可，调用位置无需再动。 */
           images: this.form.refImages.join(','),

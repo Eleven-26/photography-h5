@@ -19,6 +19,9 @@ export const sendSmsCode = (mobile) => rpc(API_PATHS.auth.smsCode, { mobile })
 
 /**
  * 验证码登录
+ * @param {string} mobile 手机号
+ * @param {string} code   短信验证码。**开发环境可传空串** —— 后端 h5.loginRequireSmsCode()
+ *                        仅在 dev / docker.dev 跳过校验；test / prod 传空仍是 400。
  * @returns {Promise<{token: string, customer: Object}>} customer = crm_customer 行
  */
 export const loginByCode = (mobile, code) =>

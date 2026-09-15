@@ -21,7 +21,8 @@
         mode="aspectFill"
       />
       <view class="home__hero-mask" />
-      <!-- 顶栏：返回 + 更多（透明浮层；返回用 C02 实测 back.svg，更多无对应原图暂保留字符） -->
+      <!-- 顶栏：返回 + 更多（透明浮层；返回用 C02 实测 back.svg。
+           2026-09-15 起「返回」在无上一页时进入客户中心 CC01，见 goBack 注释 -->
       <view class="home__topbar">
         <view class="home__topbar-btn pressable" @click="goBack">
           <AppIcon name="back" :size="44" />
@@ -245,10 +246,21 @@ export default {
         // 错误已由 request 层统一 toast，此处保留已有数据不清空
       }
     },
+    /**
+     * 左上角「<」→ 客户中心（CC01）
+     *
+     * 2026-09-15 变更：分享页是 H5 的**落地根页**（客户从分享链接直达），页面栈里通常
+     * 没有上一页 —— 原实现在栈深=1 时什么都不做，点了像按钮坏了。按产品口径改为进入
+     * 客户中心：客户在任何位置都能一键找回自己的订单/定制需求/评价，不依赖浏览器返回。
+     * 若确实存在上一页（栈深>1，例如从作品列表回来），仍保留原生返回语义，不劫持。
+     */
     goBack() {
-      // H5 直达首页时无上级页，回退失败静默
       const pages = getCurrentPages()
-      if (pages.length > 1) uni.navigateBack()
+      if (pages.length > 1) {
+        uni.navigateBack()
+        return
+      }
+      uni.navigateTo({ url: '/pages/me/index' })
     },
     onMore() {
       // 更多操作（分享等），待产品定义

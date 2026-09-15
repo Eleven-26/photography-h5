@@ -30,6 +30,23 @@ apiBase = import.meta.env.VITE_API_BASE_URL || ''
 export const API_BASE = apiBase
 
 /**
+ * 登录是否必须短信验证码。
+ *
+ * 与后端 `h5.Controller.loginRequireSmsCode()` 是**同一判据的两端实现**：后端只在
+ * dev / docker.dev 放开免验证码登录（白名单式，test / prod 恒强制），前端对应
+ * Vite 的开发/生产模式 —— `npm run dev:h5` 免验证码，构建产物要验证码。
+ *
+ * 之所以两端各判一次而不是让后端下发：这是个"环境属性"而非业务数据，
+ * 且后端本身就是强制执行方（前端隐藏输入框只是不给用户添堵，
+ * 真要绕过也只会拿到 400「验证码错误或已过期」）。两端判据都只认"开发环境"，
+ * 所以不会出现"前端要码、后端不要码"的错配。
+ *
+ * 注意：短信通道尚未接入（后端只把验证码打到服务端日志），
+ * 因此未开 dev 的环境若需登录，得去服务端日志里捞验证码。
+ */
+export const SMS_LOGIN_REQUIRED = !import.meta.env.DEV
+
+/**
  * 通知通道按环境降级（需求文档 v1.3 §8）：
  * - 微信内 H5 / 小程序：订阅消息
  * - 普通浏览器：短信触达

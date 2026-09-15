@@ -35,3 +35,23 @@ export const getProfile = (extra = {}) => rpc(API_PATHS.customer.profile, {}, nu
  *   ⚠️ 手机号不在可改范围：它是登录凭据，换绑必须走短信验证。
  */
 export const updateProfile = (patch) => rpc(API_PATHS.customer.profileUpdate, patch)
+
+/**
+ * 定制需求页「选择门店 → 选择摄影师」的候选（POST /h5/customer/photographer-options）
+ *
+ * 用途：定制需求的摄影师此前只能由**分享链接**带入（URL ?staff_id=），客户自己从个人中心
+ * 进来时 URL 没有摄影师，需求就无从归属（提交页原来压根没传）。本接口给出「服务过这个
+ * 客户的门店与摄影师」，让客户在页面上直接选。
+ *
+ * @param {Object} [extra] 透传 { loading, silent }
+ * @returns {Promise<Array>} [{ store_id, store_name, photographers: [{ id, name, avatar }] }]
+ *   - 候选 = 该客户**曾下过单或提过定制需求**的门店/摄影师 ∪ 本次分享链接的分享人；
+ *     新客户且非分享进入时为空数组 —— 页面据此**不展示选择器**（需求仍可提交，由工作室指派）。
+ *   - `store_id = 0` 是占位组：摄影师未分配门店，此时 `store_name` 为空串，页面显示为「未指定门店」。
+ *   - 已停用的员工不在候选内（后端过滤：停用的人接不了单，给了也会被提交接口拒）。
+ *
+ * ⚠️ 必须登录（同 profile）：未登录调用会 401 → request 层清登录态并跳登录页，
+ *    所以页面必须先 isLoggedIn() 判断、未登录时**不发请求**（A2 口径：匿名可打开页面）。
+ */
+export const getPhotographerOptions = (extra = {}) =>
+  rpc(API_PATHS.customer.photographerOptions, {}, null, extra)

@@ -28,6 +28,41 @@
       <input v-model="form.mobile" class="page-cx__input-el" type="number" :maxlength="11" placeholder="便于摄影师与你联系" placeholder-class="page-cx__ph" />
     </view>
 
+    <!-- ①-2 服务摄影师（选填）
+         候选 = 客户**曾下过单或提过定制需求**的门店/摄影师 ∪ 本次分享链接的分享人
+         （POST /h5/customer/photographer-options，需登录）。
+         ⚠️ 候选为空时不渲染本区块：游客、或新客户且非分享进入时没有可选范围，
+            需求照旧提交，由工作室后续指派（不因为「没得选」而挡住提交）。
+         两级联动：门店（候选仅一个时不展示）→ 该门店下的摄影师。 -->
+    <view v-if="options.length" class="page-cx__picker">
+      <view class="page-cx__label"><text>服务摄影师（选填）</text></view>
+
+      <view v-if="options.length > 1" class="page-cx__pills">
+        <text
+          v-for="s in options"
+          :key="s.store_id"
+          class="page-cx__pill"
+          :class="{ 'page-cx__pill--on': form.storeId === s.store_id }"
+          @click="selectStore(s)"
+        >{{ storeLabel(s) }}</text>
+      </view>
+
+      <view class="page-cx__pills">
+        <text
+          class="page-cx__pill"
+          :class="{ 'page-cx__pill--on': !form.photographerId }"
+          @click="selectPhotographer(0)"
+        >由工作室安排</text>
+        <text
+          v-for="p in currentPhotographers"
+          :key="p.id"
+          class="page-cx__pill"
+          :class="{ 'page-cx__pill--on': form.photographerId === p.id }"
+          @click="selectPhotographer(p.id)"
+        >{{ p.name || '摄影师' }}</text>
+      </view>
+    </view>
+
     <!-- ② 拍摄类型（C27 实测六胶囊，单选） -->
     <view class="page-cx__label"><text>拍摄类型</text></view>
     <view class="page-cx__pills">
@@ -140,16 +175,25 @@
  *   POST /h5/customer/profile 的服务端最新资料覆盖（静默失败即降级用缓存）。
  *   偏好两项因 biz_custom_request **无对应列**，提交时并入 detail 文本（见 onSubmit）。
  *
+ * 服务摄影师（2026-09-15 新增）：定制需求的摄影师此前**只能由分享链接带入**（URL ?staff_id=），
+ *   客户自己从个人中心进来时 URL 没有摄影师、需求无从归属。现改为可显式选择：
+ *   候选 = 该客户**曾下过单或提过定制需求**的门店/摄影师 ∪ 本次分享链接的分享人
+ *   （POST /h5/customer/photographer-options，需登录），两级联动「门店 → 该店摄影师」，
+ *   提交时带 store_id / photographer_id。
+ *   候选为空（游客、或新客户且非分享进入）→ 不展示选择器，需求照旧提交、由工作室指派。
+ *   后端归属优先级见 service.ClientSubmitCustomRequest：body.photographer_id > 分享链接 staff_id。
+ *
  * 预算/类型为稿面固定枚举；联调时如需 photographers 端可配置再改接口驱动。
- * ⚠️ 摄影师姓名后端未下发（studio/info 无该字段、package 亦无），页内不再写死姓名，
- *    文案统一用「摄影师」泛称。
+ * ℹ️ 展示用的摄影师姓名来自接口（sys_user.nickname）；studio/info 仍未下发「主理人」这类
+ *    姓名，所以「未指定」时文案统一用「摄影师」泛称。
  */
 import AppNavBar from '@/components/AppNavBar.vue'
 import AppFooter from '@/components/AppFooter.vue'
 import AppButton from '@/components/AppButton.vue'
 import { submitCustomRequest } from '@/api/customRequest'
-import { getProfile } from '@/api/customer'
+import { getProfile, getPhotographerOptions } from '@/api/customer'
 import { getCustomer, isLoggedIn } from '@/utils/auth'
+import { getStaffId } from '@/utils/referrer'
 import { useUserStore } from '@/stores/user'
 
 const TYPES = ['家庭纪念', '个人写真', '情侣/婚纱', '儿童写真', '活动跟拍', '其他']
@@ -180,6 +224,10 @@ export default {
         /* 拍摄偏好：客户中心「个人资料」里的 prefer_style / prefer_scene，自动带入 */
         preferStyle: '',
         preferScene: '',
+        /* 服务 photographer 归属：0 = 未指定（由工作室安排）。
+           提交时映射为 { store_id, photographer_id }（见 onSubmit）。 */
+        storeId: 0,
+        photographerId: 0,
         type: '家庭纪念',
         date: '',
         address: '',
@@ -187,8 +235,20 @@ export default {
         detail: '',
         refImages: [],
       },
+      /* 候选门店（含其下摄影师）；空数组 = 不展示「服务摄影师」区块 */
+      options: [],
       submitting: false,
     }
+  },
+  computed: {
+    /** 当前选中的门店（未选或选择已失效时回落到第一个候选） */
+    currentStore() {
+      return this.options.find((s) => s.store_id === this.form.storeId) || this.options[0] || null
+    },
+    /** 当前门店下可选的摄影师（可能为空：客户只在这家店提过需求、没下过单） */
+    currentPhotographers() {
+      return (this.currentStore && this.currentStore.photographers) || []
+    },
   },
   onLoad() {
     /* 已登录客户自动带出称呼/手机号/偏好（仍可改）；未登录保持空白，由用户填写。
@@ -199,7 +259,12 @@ export default {
     this.form.mobile = cu.mobile || ''
     this.form.preferStyle = cu.prefer_style || ''
     this.form.preferScene = cu.prefer_scene || ''
-    if (isLoggedIn()) this.loadProfile()
+    if (isLoggedIn()) {
+      this.loadProfile()
+      /* 候选门店/摄影师接口也要登录态（未登录 401），故与资料一起在登录分支里拉；
+         未登录时不发请求，「服务摄影师」区块自然不渲染（游客照样能提交需求）。 */
+      this.loadOptions()
+    }
   },
   methods: {
     /**
@@ -223,6 +288,47 @@ export default {
       } catch {
         /* 静默降级：本页是公开页，取不到资料不影响提交 */
       }
+    },
+    /**
+     * 拉取「服务摄影师」候选（**静默**：取不到就不展示该区块，不影响提交）
+     *
+     * 预选规则：优先「本次归属摄影师」—— URL ?staff_id= 实时值优先、其次本地缓存
+     * （见 utils/referrer → getStaffId）。也就是客户从谁的分享链接进来就默认选谁；
+     * 他不适合（不在候选里）或本来就没有归属时，退回第一个门店 + 「由工作室安排」。
+     */
+    async loadOptions() {
+      try {
+        const list = await getPhotographerOptions({ loading: false, silent: true })
+        this.options = Array.isArray(list) ? list : []
+      } catch {
+        /* 取不到即不展示选择器：本页是提交需求的主流程，不能因这个附带能力失败而卡住 */
+        this.options = []
+        return
+      }
+      if (!this.options.length) return
+      const cur = Number(getStaffId() || 0)
+      let target = null
+      let photographerId = 0
+      if (cur > 0) {
+        target = this.options.find((s) => (s.photographers || []).some((p) => p.id === cur)) || null
+        if (target) photographerId = cur
+      }
+      if (!target) target = this.options[0]
+      this.form.storeId = target.store_id
+      this.form.photographerId = photographerId
+    },
+    /** 选择门店：换店后原摄影师未必属于该店，先清空（否则提交会被后端按「门店与摄影师不自洽」拒掉） */
+    selectStore(s) {
+      this.form.storeId = s.store_id
+      this.form.photographerId = 0
+    },
+    /** 选择摄影师（0 = 由工作室安排，需求落门店/公共池） */
+    selectPhotographer(id) {
+      this.form.photographerId = id
+    },
+    /** 门店胶囊文案：store_id=0 的占位组（摄影师未分配门店）没有名字 */
+    storeLabel(s) {
+      return s.store_name || '未指定门店'
     },
     chooseRefs() {
       uni.chooseImage({
@@ -271,6 +377,11 @@ export default {
              勿改回 type / address / budget / ref_images 等页内命名（它们是旧版臆造字段，后端全部收不到） */
           name,
           mobile,
+          /* 服务门店 / 摄影师归属（0 = 未指定，由工作室安排；未登录时两者恒为 0）。
+             ⚠️ photographer_id 必须**显式**传：后端以它优先、缺省才回落分享链接的 staff_id ——
+             这样「从个人中心进来（URL 无 staff_id）」的客户也能把需求指定给某位摄影师。 */
+          store_id: this.form.storeId,
+          photographer_id: this.form.photographerId,
           project_type: this.form.type,
           expected_date: this.form.date.trim(),
           location: this.form.address.trim(),
@@ -340,6 +451,12 @@ export default {
       background-color: $text-1;
       border-color: $text-1;
     }
+  }
+
+  /* 服务摄影师区块：门店行与摄影师行紧邻，补一行间距
+     （.page-cx__pills 自身只有左右外边距，相邻两行会贴在一起） */
+  &__picker .page-cx__pills + .page-cx__pills {
+    margin-top: 16rpx;
   }
 
   /* ③④ 输入框（C27 实测 343×50，r8 描边 pad 32/16） */

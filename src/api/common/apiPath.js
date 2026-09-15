@@ -46,7 +46,9 @@ export const API_PATHS = {
   // remark / tags / level / source / status 属工作室内部信息，客户端不可读也不可改。
   customer: {
     profile: 'customer/profile',
-    profileUpdate: 'customer/profile/update'
+    profileUpdate: 'customer/profile/update',
+    /** 定制需求页「选择门店 → 选择摄影师」的候选（客户历史服务过的门店/摄影师；**需登录**） */
+    photographerOptions: 'customer/photographer-options'
   },
   // 定制需求
   customRequest: {

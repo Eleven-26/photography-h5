@@ -10,6 +10,7 @@
     { "path": "pages/index/index", "style": { "navigationBarTitleText": "SLOT 摄影预约" } },
     { "path": "pages/login/index", "style": { "navigationBarTitleText": "登录" } },
     { "path": "pages/works/index", "style": { "navigationBarTitleText": "作品集" } },
+    { "path": "pages/works/detail", "style": { "navigationBarTitleText": "作品详情" } },
     { "path": "pages/package/detail", "style": { "navigationBarTitleText": "套餐详情" } },
     { "path": "pages/booking/date", "style": { "navigationBarTitleText": "选择日期" } },
     { "path": "pages/booking/form", "style": { "navigationBarTitleText": "填写需求" } },

@@ -9,9 +9,13 @@
 
     <!-- ① Hero：360px 大图 + 渐变（顶部压暗 / 底部融入页面底色）
          稿为沉浸式：Hero 从 y0 全出血，iPhone 状态栏浮在图上，
-         故本页不插 .status-bar 占位，顶栏用 absolute 浮层（top 44px 视觉偏移） -->
+         故本页不插 .status-bar 占位，顶栏用 absolute 浮层（top 44px 视觉偏移）
+         图源：biz_studio_setting.cover_url —— 工作室在 PC / 小程序「我的预约主页」上传的
+         分享封面图（2026-09-15 新增字段）。未设置时不渲染 image，仅留纯色底，
+         避免空 src 触发一次无意义的图片请求。 -->
     <view class="home__hero">
       <image
+        v-if="studio.cover_url"
         class="home__hero-img"
         :src="studio.cover_url"
         mode="aspectFill"

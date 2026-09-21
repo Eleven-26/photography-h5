@@ -16,11 +16,14 @@
  * ⚠️ 项目铁律：**业务接口一律 POST + JSON body**，后端不读 query（见 internal/pkg/params）。
  *    路径参数走 URL（/x/y/:id），业务参数走 body；因此对外只暴露 rpc()，不提供 get()。
  */
+import { getActivePinia } from 'pinia'
+
 import { API_BASE } from '@/config/env'
 import { API_PREFIX } from '@/api/common/apiPath'
 import { getToken, clearAuth } from '@/utils/auth'
 import { getSlug } from '@/utils/slug'
 import { getStaffId } from '@/utils/referrer'
+import { useUserStore } from '@/stores/user'
 
 /**
  * 不需要登录态的白名单 —— 与后端 h5 分组公开路由一一对应
@@ -38,6 +41,20 @@ const PUBLIC_PATHS = [
 
 /** 登录页路径（401 跳转用） */
 const LOGIN_PAGE = '/pages/login/index'
+
+/**
+ * 401 统一处理：清本地登录态 + 重置 Pinia，避免 store 残留脏登录态后页面误判已登录。
+ * （$reset 会重新执行 state()，此时 storage 已清空，得到未登录初值。）
+ */
+function handleUnauthorized() {
+  clearAuth()
+  const pinia = getActivePinia()
+  if (pinia) useUserStore(pinia).$reset()
+  const pages = getCurrentPages()
+  const current = pages[pages.length - 1]
+  const redirect = current ? current.route : ''
+  uni.reLaunch({ url: `${LOGIN_PAGE}?redirect=/${redirect}` })
+}
 
 /**
  * 发起请求
@@ -85,11 +102,7 @@ export function request(options) {
 
         // HTTP 401：登录态失效 → 清态跳登录（携带回跳）
         if (statusCode === 401) {
-          clearAuth()
-          const pages = getCurrentPages()
-          const current = pages[pages.length - 1]
-          const redirect = current ? current.route : ''
-          uni.reLaunch({ url: `${LOGIN_PAGE}?redirect=/${redirect}` })
+          handleUnauthorized()
           return reject(new Error('未登录或登录已过期'))
         }
 

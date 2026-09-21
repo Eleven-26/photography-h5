@@ -87,8 +87,6 @@ export const API_PATHS = {
   pay: { mark: 'pay/mark' },
   paymentMethod: { list: 'payment-method/list' },
   review: {
-    /** :order_id = 订单 ID（订单完成后才能评价，每单一评） */
-    create: 'review/create',
     /** 我的评价（客户中心 → 我的评价；不分页，返回评价+订单快照的集合） */
     list: 'review/list'
   },
@@ -110,12 +108,5 @@ export const API_PATHS = {
     detail: 'quote/detail',
     accept: 'quote/accept',
     modify: 'quote/modify'
-  },
-  // 站内通知
-  notification: {
-    list: 'notification/list',
-    unreadCount: 'notification/unread-count',
-    read: 'notification/read',
-    readAll: 'notification/read-all'
   }
 }

@@ -76,10 +76,10 @@ src/
 
 ## 已知限制 / 待办
 
-- 小程序链路未闭合（appid、生产基址、Docker 只建 H5）。
-- 登录态双源（store 与 storage 并存）、无路由级登录守卫。
-- `vue-i18n`、`AppPrice`、`AppTimeline` 未使用；`notification` 等路径空挂。
-- 无测试 / 无 CI / 行尾混用。完整清单见 `photography-server/docs/架构/03-结构审视与整改.md`。
+- 小程序 appid 与生产基址仍待业务值：已加**构建期 fail-fast**（`vite.config.js`），空基址不再静默回退 localhost。
+- 登录态：401 已同步重置 Pinia（`$reset`）；新增需登录页前缀守卫（公开页不拦）。
+- 已删除未用的 `AppPrice`/`AppTimeline`、未实现的 `notification.*`/`review.create` 路径，并卸载 `vue-i18n`。
+- 已加 CI（lint + build:h5）与 `.editorconfig`/`.gitattributes`；仍无单测、裸色值/分包/SVG 待后续。完整清单见 `photography-server/docs/架构/03-结构审视与整改.md`。
 
 ## 架构文档
 

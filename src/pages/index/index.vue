@@ -4,7 +4,7 @@
          首页 · 画板 C01（2026-09-07 Ardot 实测 1:55 一比一还原）
          结构：Hero 大图 → 数据统计卡 → 精选服务（套餐横滑）→ 精选作品
                （双列瀑布流）→ 服务流程 → 常见问题 → 毛玻璃底栏（定制需求）
-         数据源：getStudioInfo（biz_studio_setting + biz_asset）· getPackages（status=1）
+         数据源：getStudioInfo（biz_studio_setting + biz_asset）· getPackages（status=2）
          ============================================================ -->
 
     <!-- ① Hero：360px 大图 + 渐变（顶部压暗 / 底部融入页面底色）

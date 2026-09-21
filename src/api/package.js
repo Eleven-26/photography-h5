@@ -2,7 +2,7 @@
  * 套餐模块（公开）—— 已上架套餐列表与详情
  *
  * 后端路由：POST /h5/package/list、POST /h5/package/detail/:id
- * 只出 status=1（已上架）套餐；快捷直约同样仅对已上架完整套餐开放（后端 BookingSubmit 校验）。
+ * 只出 status=2（已上架，见 constants/enums.js 的 PACKAGE_STATUS.ACTIVE）套餐；快捷直约同样仅对已上架完整套餐开放（后端 BookingSubmit 校验）。
  */
 import { rpc } from '@/api/common/http'
 import { API_PATHS } from '@/api/common/apiPath'
